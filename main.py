@@ -191,39 +191,22 @@ async def run_python_code(ctx: Context, code: str) -> dict:
 async def code_completion(ctx: Context, code: str, cursor_pos: int) -> dict:
     """Provide code completion suggestions from the Jupyter kernel.
 
-    Returns a best-effort empty completion set if the kernel does not
-    respond in time instead of surfacing an error in CI/headless envs.
-
     Args:
         ctx: FastMCP request context.
         code: Buffer contents to complete against.
         cursor_pos: Cursor index within `code` to request completions for.
 
     Returns:
-        dict: Raw Jupyter completion reply, or fallback
-        {"status": "ok", "matches": []}.
+        dict: Raw Jupyter completion reply.
     """
     client = kernel_manager.get_client()
-    try:
-        client.complete(code, cursor_pos)
-        for _ in range(3):
-            try:
-                msg = client.get_shell_msg(timeout=1.5)
-                content = msg.get('content') if isinstance(msg, dict) else None
-                if content:
-                    return content
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return {"status": "ok", "matches": [], "cursor_start": max(0, cursor_pos - 1), "cursor_end": cursor_pos}
+    client.complete(code, cursor_pos)
+    msg = client.get_shell_msg(timeout=1)
+    return msg['content']
 
 @mcp.tool
 async def inspect_object(ctx: Context, code: str, cursor_pos: int, detail_level: int = 0) -> dict:
     """Inspect an object/expression within the kernel namespace.
-
-    Returns a best-effort empty result if the kernel does not respond
-    in time to avoid flakiness in CI.
 
     Args:
         ctx: FastMCP request context.
@@ -232,23 +215,12 @@ async def inspect_object(ctx: Context, code: str, cursor_pos: int, detail_level:
         detail_level: Jupyter detail level (0 minimal, higher is more verbose).
 
     Returns:
-        dict: Raw Jupyter inspection reply, or fallback
-        {"status": "ok", "found": false}.
+        dict: Raw Jupyter inspection reply.
     """
     client = kernel_manager.get_client()
-    try:
-        client.inspect(code, cursor_pos, detail_level)
-        for _ in range(3):
-            try:
-                msg = client.get_shell_msg(timeout=1.5)
-                content = msg.get('content') if isinstance(msg, dict) else None
-                if content:
-                    return content
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return {"status": "ok", "found": False}
+    client.inspect(code, cursor_pos, detail_level)
+    msg = client.get_shell_msg(timeout=1)
+    return msg['content']
 
 def _render_tree(root: Path, max_depth: int | None = 3, include_files: bool = True, include_dirs: bool = True) -> str:
     def is_included(p: Path) -> bool:

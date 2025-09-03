@@ -221,40 +221,22 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
     async def code_completion(ctx: Context, code: str, cursor_pos: int) -> dict:  # noqa: ARG001
         """Request code completion suggestions from the kernel.
 
-        Returns a best-effort empty completion set if the kernel does not
-        respond in time instead of surfacing an error.
-
         Args:
           ctx: FastMCP request context (unused).
           code: Buffer contents to complete against.
           cursor_pos: Cursor index within ``code`` to complete at.
 
         Returns:
-          Raw Jupyter completion reply content or a fallback payload
-          ``{"status":"ok","matches":[]}``.
+          Raw Jupyter completion reply content.
         """
         client = kernel_manager.get_client()
-        try:
-            client.complete(code, cursor_pos)
-            # Try a couple of times with short timeouts
-            for _ in range(3):
-                try:
-                    msg = client.get_shell_msg(timeout=1.5)
-                    content = msg.get('content') or {}
-                    if content:
-                        return content
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        return {"status": "ok", "matches": [], "cursor_start": max(0, cursor_pos - 1), "cursor_end": cursor_pos}
+        client.complete(code, cursor_pos)
+        msg = client.get_shell_msg(timeout=1)
+        return msg['content']
 
     @app.tool
     async def inspect_object(ctx: Context, code: str, cursor_pos: int, detail_level: int = 0) -> dict:  # noqa: ARG001
         """Inspect an object/expression within the kernel namespace.
-
-        Returns a best-effort empty result instead of surfacing an error
-        if the kernel does not respond in time.
 
         Args:
           ctx: FastMCP request context (unused).
@@ -263,23 +245,12 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
           detail_level: Jupyter detail level (0 minimal; higher is more verbose).
 
         Returns:
-          Raw Jupyter inspection reply content or fallback
-          ``{"status":"ok","found":false}``.
+          Raw Jupyter inspection reply content.
         """
         client = kernel_manager.get_client()
-        try:
-            client.inspect(code, cursor_pos, detail_level)
-            for _ in range(3):
-                try:
-                    msg = client.get_shell_msg(timeout=1.5)
-                    content = msg.get('content') or {}
-                    if content:
-                        return content
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        return {"status": "ok", "found": False}
+        client.inspect(code, cursor_pos, detail_level)
+        msg = client.get_shell_msg(timeout=1)
+        return msg['content']
 
     @app.tool
     async def list_files(
