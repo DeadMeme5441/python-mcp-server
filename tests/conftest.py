@@ -1,20 +1,22 @@
-import os
 import time
 import subprocess
 from typing import Iterator
 
 import httpx
 import pytest
+import socket
+
+def _get_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
-BASE_URL = "http://127.0.0.1:8000"
-
-
-def _wait_for_server(timeout: float = 20.0) -> bool:
+def _wait_for_server(base_url: str, timeout: float = 20.0) -> bool:
     start = time.time()
     while time.time() - start < timeout:
         try:
-            r = httpx.get(BASE_URL + "/files/download/does_not_exist.txt")
+            r = httpx.get(base_url + "/files/download/does_not_exist.txt")
             if r.status_code in (200, 400, 404):
                 return True
         except Exception:
@@ -24,11 +26,12 @@ def _wait_for_server(timeout: float = 20.0) -> bool:
 
 
 @pytest.fixture(scope="session")
-def server_proc() -> Iterator[subprocess.Popen]:
-    env = os.environ.copy()
-    proc = subprocess.Popen([env.get("PYTHON", "python"), "main.py"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+def server_proc() -> Iterator[tuple[subprocess.Popen, str]]:
+    port = _get_free_port()
+    base_url = f"http://127.0.0.1:{port}"
+    proc = subprocess.Popen(["python", "main.py", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
-        ok = _wait_for_server()
+        ok = _wait_for_server(base_url)
         if not ok:
             # dump logs for debugging
             try:
@@ -37,7 +40,7 @@ def server_proc() -> Iterator[subprocess.Popen]:
             except Exception:
                 pass
             raise RuntimeError("server did not start")
-        yield proc
+        yield proc, base_url
     finally:
         proc.terminate()
         try:
@@ -48,10 +51,10 @@ def server_proc() -> Iterator[subprocess.Popen]:
 
 @pytest.fixture(scope="session")
 def base_url(server_proc) -> str:  # noqa: ARG001 unused
-    return BASE_URL
+    _proc, url = server_proc
+    return url
 
 
 @pytest.fixture(scope="session")
 def mcp_url(base_url: str) -> str:
     return base_url + "/mcp"
-

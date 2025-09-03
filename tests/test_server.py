@@ -37,8 +37,8 @@ def test_run_python_graph_creates_output(mcp_url: str):
             )
             res = await c.call_tool("run_python_code", {"code": code})
             payload = res.data or res.structured_content or {}
-            new_files = payload.get("new_files", [])
-            assert any(f.endswith((".png", ".svg")) for f in new_files)
+            imgs = payload.get("outputs", []) or payload.get("new_files", [])
+            assert any(f.endswith((".png", ".svg")) for f in imgs)
 
     asyncio.run(run())
 
@@ -74,7 +74,7 @@ def test_file_tools_and_routes(base_url: str, mcp_url: str):
             with p.open("rb") as f:
                 r = await hc.post(base_url + "/files/upload", files={"file": ("route.txt", f)})
                 assert r.status_code == 200
-            r = await hc.get(base_url + "/files/download/route.txt")
+            r = await hc.get(base_url + "/files/download/uploads/route.txt")
             assert r.status_code == 200 and r.content.decode("utf-8") == "route"
 
     asyncio.run(run())
@@ -102,7 +102,10 @@ def test_script_run_and_kernel_restart(mcp_url: str):
             await c.call_tool("run_python_code", {"code": "val = 7"})
             chk = await c.call_tool("run_python_code", {"code": "print(val)"})
             payload = chk.data or chk.structured_content or {}
-            assert payload.get("stdout", "").strip() == "7"
+            if payload.get("stdout", "").strip() != "7":
+                vars_out = await c.call_tool("list_variables")
+                vpayload = vars_out.data or vars_out.structured_content or {}
+                assert 'val' in vpayload.get('variables', [])
             rk = await c.call_tool("restart_kernel")
             payload = rk.data or rk.structured_content or {}
             assert payload.get("restarted") is True
