@@ -1,0 +1,137 @@
+
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│                                                                            │
+│        _ __ ___  _____           __  __  _____________    ____    ____     │
+│       _ __ ___ .'____/___ ______/ /_/  |/  / ____/ __ \  |___ \  / __ \    │
+│      _ __ ___ / /_  / __ `/ ___/ __/ /|_/ / /   / /_/ /  ___/ / / / / /    │
+│     _ __ ___ / __/ / /_/ (__  ) /_/ /  / / /___/ ____/  /  __/_/ /_/ /     │
+│    _ __ ___ /_/    \____/____/\__/_/  /_/\____/_/      /_____(*)____/      │
+│                                                                            │
+│                                                                            │
+│                                FastMCP  2.0                                │
+│                                                                            │
+│                                                                            │
+│               🖥️  Server name:     Python Interpreter MCP                   │
+│               📦 Transport:       Streamable-HTTP                          │
+│               🔗 Server URL:      http://127.0.0.1:8000/mcp                │
+│                                                                            │
+│               🏎️  FastMCP version: 2.12.0                                   │
+│               🤝 MCP SDK version: 1.13.1                                   │
+│                                                                            │
+│               📚 Docs:            https://gofastmcp.com                    │
+│               🚀 Deploy:          https://fastmcp.cloud                    │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯
+
+
+[09/03/25 20:49:27] INFO     Starting MCP server 'Python          server.py:1571
+                             Interpreter MCP' with transport                    
+                             'http' on http://127.0.0.1:8000/mcp                
+INFO:     Started server process [382213]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+Jupyter Kernel Started
+INFO:     127.0.0.1:39594 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39602 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:39610 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39614 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39620 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39628 - "POST /files/upload HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39632 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39628 - "GET /files/download/test_upload.txt HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39642 - "POST /mcp HTTP/1.1" 200 OK
+[09/03/25 20:49:32] ERROR    Could not serialize structured content.  tool.py:81
+                             If this is unexpected, set your tool's             
+                             output_schema to None to disable                   
+                             automatic serialization: Unable to                 
+                             serialize unknown type: <class                     
+                             'starlette.responses.JSONResponse'>                
+                    ERROR    Error calling tool              tool_manager.py:233
+                             'delete_file'                                      
+                             ╭─ Traceback (most recent cal─╮                    
+                             │ /home/deadmeme/Projects/Per │                    
+                             │ sonal/agents/python-interpr │                    
+                             │ eter-mcp/.venv/lib/python3. │                    
+                             │ 12/site-packages/fastmcp/to │                    
+                             │ ols/tool_manager.py:224 in  │                    
+                             │ call_tool                   │                    
+                             │                             │                    
+                             │   221 │   │   │   │   raise │                    
+                             │   222 │   │   │             │                    
+                             │   223 │   │   │   try:      │                    
+                             │ ❱ 224 │   │   │   │   retur │                    
+                             │   225 │   │   │             │                    
+                             │   226 │   │   │   # raise T │                    
+                             │   227 │   │   │   except To │                    
+                             │                             │                    
+                             │ /home/deadmeme/Projects/Per │                    
+                             │ sonal/agents/python-interpr │                    
+                             │ eter-mcp/.venv/lib/python3. │                    
+                             │ 12/site-packages/fastmcp/to │                    
+                             │ ols/tool.py:336 in run      │                    
+                             │                             │                    
+                             │   333 │   │   │   except Ex │                    
+                             │   334 │   │   │   │   pass  │                    
+                             │   335 │   │                 │                    
+                             │ ❱ 336 │   │   return ToolRe │                    
+                             │   337 │   │   │   content=u │                    
+                             │   338 │   │   │   structure │                    
+                             │   339 │   │   )             │                    
+                             │                             │                    
+                             │ /home/deadmeme/Projects/Per │                    
+                             │ sonal/agents/python-interpr │                    
+                             │ eter-mcp/.venv/lib/python3. │                    
+                             │ 12/site-packages/fastmcp/to │                    
+                             │ ols/tool.py:77 in __init__  │                    
+                             │                             │                    
+                             │    74 │   │                 │                    
+                             │    75 │   │   if structured │                    
+                             │    76 │   │   │   try:      │                    
+                             │ ❱  77 │   │   │   │   struc │                    
+                             │    78 │   │   │   │   │   s │                    
+                             │    79 │   │   │   │   )     │                    
+                             │    80 │   │   │   except py │                    
+                             ╰─────────────────────────────╯                    
+                             PydanticSerializationError:                        
+                             Unable to serialize unknown                        
+                             type: <class                                       
+                             'starlette.responses.JSONRespon                    
+                             se'>                                               
+INFO:     127.0.0.1:39654 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52238 - "GET /files/download/does_not_exist.txt HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52246 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52252 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52268 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52284 - "POST /mcp HTTP/1.1" 200 OK
+Tool 'install_dependencies' not listed, no validation will be performed
+INFO:     127.0.0.1:52298 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47634 - "GET /files/download/does_not_exist.txt HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:47638 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47646 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:47654 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47660 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47664 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33708 - "GET /files/download/does_not_exist.txt HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:33714 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33728 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:33732 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33738 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33750 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43962 - "GET /files/download/does_not_exist.txt HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:43976 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43986 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:43988 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43998 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:44006 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52236 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52244 - "POST /mcp HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:52254 - "GET /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52268 - "POST /mcp HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52280 - "DELETE /mcp HTTP/1.1" 200 OK
+INFO:     Shutting down
+ERROR:    Cancel 0 running task(s), timeout graceful shutdown exceeded
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [382213]
