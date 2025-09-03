@@ -6,6 +6,13 @@ from typing import Iterator
 import httpx
 import pytest
 import socket
+from pathlib import Path
+
+# Ensure src/ is importable for unit tests (src layout)
+SRC = Path(__file__).resolve().parents[1] / "src"
+import sys as _sys
+if str(SRC) not in _sys.path:
+    _sys.path.insert(0, str(SRC))
 
 def _get_free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
