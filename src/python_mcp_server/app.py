@@ -17,6 +17,12 @@ from fastmcp import FastMCP, Context
 
 
 class KernelManagerSingleton:
+    """Singleton wrapper around a Jupyter kernel client.
+
+    Starts a single ipykernel instance per process and provides access to the
+    connected client. The kernel is shut down automatically on interpreter
+    exit via ``atexit``.
+    """
     _instance = None
     _km: Optional[KernelManager] = None
     _client = None
@@ -40,6 +46,18 @@ class KernelManagerSingleton:
 
 
 def _ensure_within_workspace(workspace: Path, p: Path) -> Path:
+    """Resolve ``p`` and assert it stays within ``workspace``.
+
+    Args:
+      workspace: Absolute path to the server's workspace root.
+      p: Input path (absolute or relative) to validate.
+
+    Returns:
+      A resolved path guaranteed to be within ``workspace``.
+
+    Raises:
+      ValueError: If the resolved path would escape the workspace.
+    """
     p = (workspace / p).resolve() if not p.is_absolute() else p.resolve()
     if workspace not in p.parents and p != workspace:
         raise ValueError("Path escapes workspace")
@@ -47,6 +65,17 @@ def _ensure_within_workspace(workspace: Path, p: Path) -> Path:
 
 
 def _render_tree(root: Path, max_depth: Optional[int] = 3, include_files: bool = True, include_dirs: bool = True) -> str:
+    """Render an ASCII tree of a directory subtree.
+
+    Args:
+      root: Root directory to render.
+      max_depth: Limit traversal depth (None for unlimited).
+      include_files: Include files in the output tree.
+      include_dirs: Include directories in the output tree.
+
+    Returns:
+      Textual tree representation using box-drawing characters.
+    """
     def is_included(p: Path) -> bool:
         return (include_files and p.is_file()) or (include_dirs and p.is_dir())
 
@@ -77,6 +106,19 @@ def _render_tree(root: Path, max_depth: Optional[int] = 3, include_files: bool =
 
 
 def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Server") -> FastMCP:
+    """Create a FastMCP application instance.
+
+    The app exposes tools for executing Python in a persistent Jupyter kernel,
+    managing files and scripts, installing dependencies, and basic inspection.
+
+    Args:
+      workspace_dir: Optional workspace location; defaults to ``$MCP_WORKSPACE_DIR``
+        or ``./workspace`` when unset.
+      name: Human-friendly server name shown in FastMCP banner.
+
+    Returns:
+      A configured FastMCP application ready to ``run(transport="http", ...)``.
+    """
     workspace = Path(os.environ.get("MCP_WORKSPACE_DIR", "workspace")).resolve() if workspace_dir is None else Path(workspace_dir).resolve()
     scripts_dir = (workspace / "scripts").resolve()
     outputs_dir = (workspace / "outputs").resolve()
@@ -97,6 +139,20 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def run_python_code(ctx: Context, code: str) -> dict:  # noqa: ARG001
+        """Execute Python code in the persistent Jupyter kernel.
+
+        The kernel session is shared across calls, enabling stateful workflows.
+        Rich display outputs (``image/png``, ``image/svg+xml``, ``application/json``)
+        are saved under ``outputs/`` and their relative paths are returned.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          code: Python source to execute.
+
+        Returns:
+          Dict with keys ``stdout``, ``stderr``, ``results`` (text results),
+          ``outputs`` (saved display artifacts), and ``new_files`` (workspace changes).
+        """
         client = kernel_manager.get_client()
         while True:
             try:
@@ -163,6 +219,16 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def code_completion(ctx: Context, code: str, cursor_pos: int) -> dict:  # noqa: ARG001
+        """Request code completion suggestions from the kernel.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          code: Buffer contents to complete against.
+          cursor_pos: Cursor index within ``code`` to complete at.
+
+        Returns:
+          Raw Jupyter completion reply content.
+        """
         client = kernel_manager.get_client()
         client.complete(code, cursor_pos)
         msg = client.get_shell_msg(timeout=1)
@@ -170,6 +236,17 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def inspect_object(ctx: Context, code: str, cursor_pos: int, detail_level: int = 0) -> dict:  # noqa: ARG001
+        """Inspect an object/expression within the kernel namespace.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          code: Buffer containing the target expression.
+          cursor_pos: Cursor index of the expression to inspect.
+          detail_level: Jupyter detail level (0 minimal; higher is more verbose).
+
+        Returns:
+          Raw Jupyter inspection reply content.
+        """
         client = kernel_manager.get_client()
         client.inspect(code, cursor_pos, detail_level)
         msg = client.get_shell_msg(timeout=1)
@@ -185,6 +262,22 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
         include_files: bool = True,
         include_dirs: bool = True,
     ) -> dict:  # noqa: ARG001
+        """List workspace files and directories.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          path: Optional relative path under the workspace root.
+          recursive: If True, return all descendants in a flat list (``files``).
+          tree: If True, return an ASCII tree rendering (``tree``).
+          max_depth: Depth cap for recursion/tree; None for unlimited.
+          include_files: Include files in results.
+          include_dirs: Include directories in results.
+
+        Returns:
+          Flat listing: ``{"root": str, "files": list[str]}``
+          Tree: ``{"root": str, "tree": str}``
+          On error: ``{"error": str}``.
+        """
         try:
             base = _ensure_within_workspace(workspace, Path(path or "."))
         except Exception:
@@ -227,10 +320,27 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def ping(ctx: Context) -> dict:  # noqa: ARG001
+        """Lightweight server health check.
+
+        Args:
+          ctx: FastMCP request context (unused).
+
+        Returns:
+          ``{"ok": True}`` if the server is responsive.
+        """
         return {"ok": True}
 
     @app.tool
     async def delete_file(ctx: Context, filename: str) -> dict:  # noqa: ARG001
+        """Delete a file under the workspace.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          filename: Relative path of the file to delete.
+
+        Returns:
+          JSONResponse with ``{"success": True}`` or an error with status code.
+        """
         try:
             filepath = _ensure_within_workspace(workspace, Path(filename))
         except Exception:
@@ -245,6 +355,18 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def read_file(ctx: Context, path: str, max_bytes: int | None = None) -> dict:  # noqa: ARG001
+        """Read a text or binary file from the workspace.
+
+        Attempts UTF-8 decoding; on failure, returns base64-encoded bytes.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          path: Relative path to read.
+          max_bytes: Optional cap on bytes read.
+
+        Returns:
+          ``{"text": str}`` for UTF-8, or ``{"base64": str}`` for binary; or ``{"error": str}``.
+        """
         try:
             p = _ensure_within_workspace(workspace, Path(path))
         except Exception:
@@ -265,6 +387,17 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def write_file(ctx: Context, path: str, content: str | None = None, base64_content: str | None = None) -> dict:  # noqa: ARG001
+        """Write a file under the workspace.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          path: Relative path to write.
+          content: Text content to write (UTF-8).
+          base64_content: Base64-encoded bytes to write; takes precedence over ``content``.
+
+        Returns:
+          ``{"path": str}`` of the written file, or ``{"error": str}``.
+        """
         try:
             p = _ensure_within_workspace(workspace, Path(path))
         except Exception:
@@ -281,6 +414,16 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def save_script(ctx: Context, name: str, content: str) -> dict:  # noqa: ARG001
+        """Save a Python script into ``scripts/`` under the workspace.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          name: Script base name (``.py`` appended if missing).
+          content: Script source code.
+
+        Returns:
+          ``{"script": str}`` relative path to the saved script; or ``{"error": str}``.
+        """
         try:
             safe = "".join(ch for ch in name if ch.isalnum() or ch in ("_", "-"))
             filename = f"{safe}.py" if not safe.endswith(".py") else safe
@@ -296,6 +439,18 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def run_script(ctx: Context, path: str, args: list[str] | None = None, timeout: int = 120) -> dict:  # noqa: ARG001
+        """Run a Python script in a subprocess and report artifacts.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          path: Relative script path under the workspace.
+          args: Optional command-line arguments passed to the script.
+          timeout: Seconds before the subprocess is terminated.
+
+        Returns:
+          ``{"stdout": str, "stderr": str, "returncode": int, "new_files": list[str]}``;
+          or ``{"error": str}`` on failure.
+        """
         try:
             script_path = _ensure_within_workspace(workspace, Path(path))
         except Exception:
@@ -324,6 +479,18 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def install_dependencies(ctx: Context, packages: list[str]) -> dict:  # noqa: ARG001
+        """Install Python packages into the current environment.
+
+        Prefers ``uv pip install`` when available; otherwise falls back to
+        ``python -m pip install``.
+
+        Args:
+          ctx: FastMCP request context (unused).
+          packages: List of package specifiers.
+
+        Returns:
+          ``{"returncode": int, "stdout": str, "stderr": str}`` from the installer.
+        """
         if not packages:
             return {"error": "No packages provided"}
         cmds = []
@@ -343,6 +510,14 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def list_variables(ctx: Context) -> dict:  # noqa: ARG001
+        """List non-private variable names in the kernel's globals.
+
+        Args:
+          ctx: FastMCP request context (unused).
+
+        Returns:
+          ``{"variables": list[str]}`` of best-effort global names (modules filtered).
+        """
         client = kernel_manager.get_client()
         code = (
             "import builtins,types\n"
@@ -369,6 +544,14 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def restart_kernel(ctx: Context) -> dict:  # noqa: ARG001
+        """Restart the Jupyter kernel and clear its state.
+
+        Args:
+          ctx: FastMCP request context (unused).
+
+        Returns:
+          ``{"restarted": True}`` on success; or ``{"error": str}``.
+        """
         try:
             kernel_manager.shutdown_kernel()
             type(kernel_manager)._km = KernelManager()
@@ -381,6 +564,14 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.tool
     async def get_workspace_info(ctx: Context) -> dict:  # noqa: ARG001
+        """Return absolute paths for the active workspace layout.
+
+        Args:
+          ctx: FastMCP request context (unused).
+
+        Returns:
+          ``{"workspace": str, "scripts": str, "outputs": str, "uploads": str}``.
+        """
         return {
             "workspace": str(workspace),
             "scripts": str(scripts_dir),
@@ -390,6 +581,10 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.custom_route("/files/upload", methods=["POST"])
     async def upload_file(request: Request):  # type: ignore[unused-ignore]
+        """Upload a file into ``uploads/`` under the workspace via multipart/form-data.
+
+        Form field: ``file``.
+        """
         form = await request.form()
         upload_file = form["file"]
         raw_name = Path(upload_file.filename).name
@@ -403,6 +598,10 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
     @app.custom_route("/files/download/{path:path}", methods=["GET"])
     async def download_file(request: Request):  # type: ignore[unused-ignore]
+        """Serve a file from the workspace by relative path.
+
+        Example: ``GET /files/download/uploads/name.txt``.
+        """
         path = request.path_params['path']
         try:
             filepath = _ensure_within_workspace(workspace, Path(path))
@@ -420,8 +619,15 @@ def create_app(workspace_dir: Optional[Path] = None, name: str = "Python MCP Ser
 
 
 def run_http(host: str = "127.0.0.1", port: int = 8000, workspace: Optional[str] = None) -> None:
+    """Run the FastMCP server over HTTP.
+
+    Args:
+      host: Bind host (default ``127.0.0.1``).
+      port: Bind port (default ``8000``).
+      workspace: Optional workspace directory path; if provided, sets
+        ``MCP_WORKSPACE_DIR`` for the process before app creation.
+    """
     if workspace:
         os.environ["MCP_WORKSPACE_DIR"] = workspace
     app = create_app()
     app.run(transport="http", host=host, port=port)
-
