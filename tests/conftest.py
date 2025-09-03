@@ -1,5 +1,6 @@
 import time
 import subprocess
+import sys
 from typing import Iterator
 
 import httpx
@@ -29,7 +30,7 @@ def _wait_for_server(base_url: str, timeout: float = 20.0) -> bool:
 def server_proc() -> Iterator[tuple[subprocess.Popen, str]]:
     port = _get_free_port()
     base_url = f"http://127.0.0.1:{port}"
-    proc = subprocess.Popen(["python", "main.py", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    proc = subprocess.Popen([sys.executable, "main.py", "--port", str(port)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     try:
         ok = _wait_for_server(base_url)
         if not ok:
