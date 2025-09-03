@@ -31,7 +31,7 @@ def test_render_tree_helper(tmp_path: Path):
 def test_snapshot_workspace_files_helper(tmp_path: Path):
     os.environ["MCP_WORKSPACE_DIR"] = str(tmp_path)
     app_mod = importlib.import_module("python_mcp_server.app")
-    app = app_mod.create_app()
+    _ = app_mod.create_app()
     before = {str(p.relative_to(tmp_path)) for p in tmp_path.rglob('*') if p.is_file()}
     (tmp_path / "x.txt").write_text("x")
     after = {str(p.relative_to(tmp_path)) for p in tmp_path.rglob('*') if p.is_file()}
