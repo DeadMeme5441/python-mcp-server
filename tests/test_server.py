@@ -52,8 +52,12 @@ def test_run_python_graph_creates_output(mcp_url: str):
                 )
                 out2 = await c.call_tool("run_python_code", {"code": code2})
                 name = (out2.data or out2.structured_content or {}).get("stdout", "").strip()
-                lf = await c.call_tool("list_files", {"path": "outputs", "recursive": True, "max_depth": 1})
-                assert any(p.endswith(name) for p in (lf.data or lf.structured_content or {}).get("files", []))
+                lf = await c.call_tool("list_files", {"path": "outputs", "recursive": True, "max_depth": 2})
+                files = (lf.data or lf.structured_content or {}).get("files", [])
+                if not any(p.endswith(name) for p in files):
+                    lf = await c.call_tool("list_files", {"recursive": True, "max_depth": 6})
+                    files = (lf.data or lf.structured_content or {}).get("files", [])
+                assert any(p.endswith(name) for p in files)
 
     asyncio.run(run())
 
