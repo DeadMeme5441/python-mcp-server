@@ -63,7 +63,8 @@ def test_full_integration_flow(base_url: str, mcp_url: str):
             )
             out = await c.call_tool("run_python_code", {"code": code})
             payload = out.data or out.structured_content or {}
-            assert any(p.endswith((".png", ".svg")) for p in payload.get("new_files", []))
+            imgs = payload.get("outputs", []) or payload.get("new_files", [])
+            assert any(p.endswith((".png", ".svg")) for p in imgs)
 
             # completion and inspect
             comp = await c.call_tool("code_completion", {"code": "impor", "cursor_pos": 5})
