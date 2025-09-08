@@ -30,7 +30,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync
+        uv sync --extra dev
 
     - name: Run tests
       run: |
@@ -55,7 +55,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync
+        uv sync --extra dev
 
     - name: Lint (ruff)
       run: |
