@@ -20,7 +20,7 @@ from fastmcp import FastMCP, Context
 from fastmcp.server.middleware.error_handling import ErrorHandlingMiddleware
 from fastmcp.server.middleware.timing import TimingMiddleware  
 from fastmcp.server.middleware.logging import LoggingMiddleware
-from fastmcp.exceptions import ToolError, ResourceError
+from fastmcp.exceptions import ToolError
 
 # --- Timeout Configuration ---
 
@@ -342,7 +342,7 @@ class KernelManagerSingleton:
                     session.pending_operations.pop(operation_id, None)
                     return result
                     
-                except asyncio.TimeoutError as e:
+                except asyncio.TimeoutError:
                     last_exception = ToolError(
                         f"Operation '{operation_name}' timed out after {timeout:.1f}s on attempt {attempt + 1}"
                     )
@@ -456,7 +456,8 @@ print(f"STATE_SNAPSHOT:{_encoded_state}")
                         if content.startswith('STATE_SNAPSHOT:'):
                             encoded_state = content[15:].strip()
                             try:
-                                import pickle, base64
+                                import pickle
+                                import base64
                                 state_data = pickle.loads(base64.b64decode(encoded_state))
                                 break
                             except Exception:
@@ -488,11 +489,13 @@ print(f"STATE_SNAPSHOT:{_encoded_state}")
                 return {"success": False, "error": "No kernel client available"}
             
             # Encode the state data and restore it
-            import pickle, base64
+            import pickle
+            import base64
             encoded_vars = base64.b64encode(pickle.dumps(state_data["variables"])).decode('ascii')
             
             code = f'''
-import pickle, base64
+import pickle
+import base64
 try:
     _restored_vars = pickle.loads(base64.b64decode("{encoded_vars}"))
     _restored_count = 0
