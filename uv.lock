@@ -2221,7 +2221,7 @@ wheels = [
 ]
 
 [[package]]
-name = "python-interpreter-mcp"
+name = "python-mcp-server"
 version = "0.5.0"
 source = { editable = "." }
 dependencies = [
@@ -2256,9 +2256,9 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=6.25.0" },
     { name = "jupyter-client", specifier = ">=8.0.0" },
     { name = "matplotlib", specifier = ">=3.7.0" },
-    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.5.0" },
-    { name = "mkdocs-llmstxt", marker = "extra == 'docs'", specifier = ">=0.1.0" },
-    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.0.0" },
+    { name = "mkdocs", marker = "extra == 'docs'" },
+    { name = "mkdocs-llmstxt", marker = "extra == 'docs'" },
+    { name = "mkdocs-material", marker = "extra == 'docs'" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pandas", specifier = ">=2.0.0" },
     { name = "pathlib", specifier = ">=1.0.1" },

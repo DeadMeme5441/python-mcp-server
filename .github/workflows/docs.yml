@@ -33,7 +33,7 @@ jobs:
       - name: Install doc dependencies
         run: |
           uv venv
-          uv pip install mkdocs mkdocs-material mkdocs-plugin-llmstxt
+          uv pip install .[docs]
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

@@ -48,9 +48,9 @@ Changelog = "https://github.com/deadmeme5441/python-mcp-server/blob/main/CHANGEL
 
 [project.optional-dependencies]
 docs = [
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-    "mkdocs-llmstxt>=0.1.0",
+    "mkdocs",
+    "mkdocs-material", 
+    "mkdocs-llmstxt",
 ]
 dev = [
     "pytest>=7.0.0",
