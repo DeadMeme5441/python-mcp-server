@@ -1,6 +1,6 @@
 # Examples
 
-Practical usage examples and common patterns for the Python Interpreter MCP Server.
+Practical usage examples and common patterns for the Python MCP Server v0.6.0 with FastMCP integration and advanced session management.
 
 ## Basic Usage Examples
 

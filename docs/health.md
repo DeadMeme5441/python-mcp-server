@@ -1,6 +1,6 @@
 # Health Monitoring
 
-Comprehensive kernel health monitoring and diagnostics for reliable Python execution.
+Comprehensive kernel health monitoring and diagnostics for reliable Python execution in Python MCP Server v0.6.0.
 
 ## Overview
 

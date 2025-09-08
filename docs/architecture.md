@@ -1,6 +1,6 @@
 # Architecture
 
-Understanding the technical architecture and design decisions behind the Python Interpreter MCP Server.
+Understanding the technical architecture and design decisions behind the Python MCP Server v0.6.0 with FastMCP integration and production-grade infrastructure.
 
 ## High-Level Architecture
 
@@ -48,6 +48,52 @@ graph TB
     I --> M
     I --> N
 ```
+
+## v0.6.0 Package Architecture
+
+The v0.6.0 release introduces a professional package structure following Python best practices:
+
+```
+src/python_mcp_server/
+├── __init__.py         # Package initialization and exports
+├── server.py           # Main FastMCP server implementation
+└── ...                 # Future modular components
+
+fastmcp.json           # FastMCP deployment configuration
+pyproject.toml         # Modern Python packaging (hatchling)
+tests/                 # Comprehensive test suite
+docs/                  # Documentation source (MkDocs)
+```
+
+### Entry Points and CLI Integration
+
+**CLI Command**: `python-mcp-server`
+```python
+# pyproject.toml
+[project.scripts]
+python-mcp-server = "python_mcp_server.server:main"
+```
+
+**FastMCP Integration**: Native `fastmcp.json` configuration
+```json
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "type": "filesystem", 
+    "path": "src/python_mcp_server/server.py",
+    "entrypoint": "mcp"
+  },
+  "deployment": {
+    "transport": "stdio",
+    "log_level": "INFO"
+  }
+}
+```
+
+**Multiple Transport Support**:
+- **STDIO Mode**: For Claude Desktop integration (`fastmcp run`)
+- **HTTP Mode**: For web clients (`fastmcp run --transport http --port 8000`)
+- **SSE Mode**: For real-time applications
 
 ## FastMCP Middleware Stack
 

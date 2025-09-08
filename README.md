@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Documentation](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://deadmeme5441.github.io/python-mcp-server/)
 
-A world-class Python interpreter MCP (Model Context Protocol) server that provides secure, isolated Python code execution with advanced session management and health monitoring.
+A world-class Python interpreter MCP (Model Context Protocol) server that provides secure, isolated Python code execution with advanced session management and health monitoring. Built with FastMCP for production-grade reliability.
 
 ## ✨ Features
 
@@ -29,22 +29,57 @@ A world-class Python interpreter MCP (Model Context Protocol) server that provid
 - **Package Installation**: Dynamic dependency management with uv/pip
 - **Script Execution**: Save and run Python scripts with output capture
 
+### 🎯 **FastMCP Integration**
+- **Native FastMCP Configuration**: Built-in `fastmcp.json` for easy deployment
+- **CLI Integration**: Works seamlessly with FastMCP CLI commands
+- **Multiple Transport Modes**: STDIO, HTTP, Server-Sent Events support
+- **Claude Desktop Ready**: Perfect integration with Claude Desktop
+
 ## 🚀 Quick Start
 
 ### Installation
 
+**Method 1: PyPI (Recommended)**
 ```bash
 pip install python-mcp-server
 ```
 
-### Basic Usage
-
-Start the server:
+**Method 2: uvx (Isolated)**
 ```bash
-python-mcp-server --port 8000
+uvx install python-mcp-server
 ```
 
-Connect with FastMCP client:
+**Method 3: FastMCP CLI (For Claude Desktop)**
+```bash
+fastmcp install claude-desktop python-mcp-server
+```
+
+### Basic Usage
+
+**Standalone Server (HTTP Mode)**
+```bash
+# Start HTTP server
+python-mcp-server --host 127.0.0.1 --port 8000
+
+# Custom workspace
+python-mcp-server --workspace /path/to/workspace --port 8000
+```
+
+**FastMCP CLI (Recommended)**
+```bash
+# Run with FastMCP (auto-detects fastmcp.json)
+fastmcp run
+
+# Run with specific transport
+fastmcp run --transport http --port 8000
+
+# For development/testing
+fastmcp dev
+```
+
+### Client Usage
+
+**FastMCP Client**
 ```python
 import asyncio
 from fastmcp.client import Client
@@ -91,6 +126,20 @@ graph TB
     B --> J[Workspace Manager]
     J --> K[File Operations]
     J --> L[Security Layer]
+```
+
+## 📦 Package Structure (v0.6.0)
+
+```
+src/python_mcp_server/
+├── server.py          # Main FastMCP server implementation
+├── __init__.py         # Package initialization
+└── ...
+
+fastmcp.json           # FastMCP configuration
+pyproject.toml         # Package metadata and dependencies
+tests/                 # Comprehensive test suite
+docs/                  # Documentation source
 ```
 
 ## 🔧 Tools Reference
@@ -161,6 +210,38 @@ print(f"Response time: {responsive.data['response_time']:.3f}s")
 
 ## 🔧 Configuration
 
+### FastMCP Configuration (`fastmcp.json`)
+```json
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "type": "filesystem",
+    "path": "src/python_mcp_server/server.py",
+    "entrypoint": "mcp"
+  },
+  "environment": {
+    "type": "uv",
+    "python": ">=3.10",
+    "dependencies": [
+      "fastmcp>=1.0.0",
+      "jupyter_client>=8.0.0",
+      "matplotlib>=3.7.0",
+      "pandas>=2.0.0"
+    ],
+    "editable": ["."]
+  },
+  "deployment": {
+    "transport": "stdio",
+    "log_level": "INFO",
+    "env": {
+      "MCP_WORKSPACE_DIR": "workspace",
+      "MPLBACKEND": "Agg",
+      "PYTHONUNBUFFERED": "1"
+    }
+  }
+}
+```
+
 ### Environment Variables
 ```bash
 export MCP_WORKSPACE_DIR="./workspace"    # Workspace directory
@@ -173,8 +254,7 @@ export PYTHONUNBUFFERED="1"               # Unbuffered output
 python-mcp-server \
     --port 8000 \
     --host 0.0.0.0 \
-    --workspace-dir ./custom_workspace \
-    --log-level INFO
+    --workspace ./custom_workspace
 ```
 
 ## 📁 Workspace Structure
@@ -189,20 +269,54 @@ workspace/
 
 ## 🤝 Integration Examples
 
-### With Claude Desktop
-Add to your MCP configuration:
+### With Claude Desktop (STDIO Mode)
+
+**Method 1: Direct Command**
 ```json
 {
   "mcpServers": {
     "python-interpreter": {
       "command": "python-mcp-server",
-      "args": ["--port", "8000"]
+      "args": ["--workspace", "/path/to/workspace"]
     }
   }
 }
 ```
 
-### With Custom Clients
+**Method 2: FastMCP CLI (Recommended)**
+```bash
+# Install for Claude Desktop
+fastmcp install claude-desktop fastmcp.json --name "Python Interpreter"
+```
+
+This generates the correct configuration automatically.
+
+**Method 3: Direct Python Path**
+```json
+{
+  "mcpServers": {
+    "python-interpreter": {
+      "command": "python", 
+      "args": [
+        "/path/to/src/python_mcp_server/server.py",
+        "--workspace", "/path/to/workspace"
+      ]
+    }
+  }
+}
+```
+
+### With Claude Code
+```bash
+fastmcp install claude-code fastmcp.json --name "Python Interpreter"
+```
+
+### With Cursor
+```bash
+fastmcp install cursor fastmcp.json --name "Python Interpreter"
+```
+
+### Custom HTTP Client
 ```python
 # Raw HTTP/JSON-RPC
 import httpx
@@ -216,6 +330,15 @@ async def call_tool(tool_name, arguments):
             "id": 1
         })
         return response.json()
+```
+
+### With uvx (No Installation)
+```bash
+# Run directly without installing globally
+uvx python-mcp-server --port 8000
+
+# With additional dependencies
+uvx --with pandas --with numpy python-mcp-server --port 8000
 ```
 
 ## 🧪 Development
@@ -242,13 +365,23 @@ uv run pytest --cov=src --cov-report=html
 ### Code Quality
 ```bash
 # Linting
-uvx ruff check .
+uvx ruff@latest check .
 
 # Type checking
 uv run mypy src/
 
 # Formatting
-uvx ruff format .
+uvx ruff@latest format .
+```
+
+### FastMCP Development
+```bash
+# Run with FastMCP for development
+fastmcp dev
+
+# Test different transports
+fastmcp run --transport http --port 8000
+fastmcp run --transport stdio
 ```
 
 ## 📚 Documentation
@@ -274,6 +407,26 @@ uvx ruff format .
 - **Data Analysis Workflows**: Session-based data processing pipelines  
 - **Research & Prototyping**: Quick iteration with state preservation
 - **Jupyter Alternative**: MCP-native Python execution environment
+- **Claude Desktop Integration**: Enhanced Python capabilities for Claude
+
+## 📋 Changelog (v0.6.0)
+
+### 🎉 Major Changes
+- **New Package Structure**: Migrated to `src/python_mcp_server/` layout
+- **FastMCP Integration**: Added native `fastmcp.json` configuration
+- **Fixed CLI Command**: `python-mcp-server` now works correctly
+- **Enhanced Installation**: Multiple installation methods supported
+
+### 🔧 Improvements
+- **Better Testing**: Fixed all test imports and module structure
+- **Documentation**: Updated for new package structure
+- **Claude Desktop**: Improved integration and configuration
+- **Code Quality**: Full linting compliance and type checking
+
+### 🐛 Bug Fixes
+- **Entry Point**: Fixed package entry point configuration
+- **Module Imports**: Resolved import issues in tests
+- **Build System**: Proper hatchling configuration
 
 ## 🤝 Contributing
 

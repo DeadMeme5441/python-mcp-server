@@ -1,25 +1,27 @@
 # Troubleshooting
 
-Common issues and solutions when using the Python Interpreter MCP Server.
+Common issues and solutions when using the Python MCP Server v0.6.0 with FastMCP integration.
 
 ## Installation Issues
 
 ### Package Installation Fails
-**Problem:** `pip install python-interpreter-mcp` fails
+**Problem:** `pip install python-mcp-server` fails
 
 **Solutions:**
 ```bash
 # Update pip and try again
 python -m pip install --upgrade pip
-pip install python-interpreter-mcp
+pip install python-mcp-server
 
-# Use uv for faster installation
-pip install uv
-uv pip install python-interpreter-mcp
+# Use uvx for isolated installation
+uvx install python-mcp-server
+
+# Use FastMCP CLI for Claude Desktop
+fastmcp install claude-desktop python-mcp-server
 
 # Install from source if PyPI fails
-git clone https://github.com/deadmeme5441/python-interpreter-mcp.git
-cd python-interpreter-mcp
+git clone https://github.com/deadmeme5441/python-mcp-server.git
+cd python-mcp-server
 uv sync
 ```
 
@@ -29,14 +31,17 @@ uv sync
 **Solutions:**
 ```bash
 # Ensure proper installation
-pip show python-interpreter-mcp
+pip show python-mcp-server
 
 # Reinstall if needed
-pip uninstall python-interpreter-mcp
-pip install python-interpreter-mcp
+pip uninstall python-mcp-server
+pip install python-mcp-server
 
 # Check Python path
 python -c "import sys; print('\n'.join(sys.path))"
+
+# Test CLI command
+python-mcp-server --help
 ```
 
 ## Server Startup Issues
@@ -51,7 +56,9 @@ netstat -an | grep 8000
 lsof -i :8000
 
 # Use different port
-python main.py --port 8080
+python-mcp-server --port 8080
+# Or with FastMCP
+fastmcp run --transport http --port 8080
 
 # Kill process using the port
 kill $(lsof -ti:8000)
@@ -68,10 +75,13 @@ chmod 755 workspace/
 
 # Set environment variable for custom workspace
 export MCP_WORKSPACE_DIR="/tmp/mcp_workspace"
-python main.py --port 8000
+python-mcp-server --workspace /tmp/mcp_workspace --port 8000
+
+# Or with FastMCP
+fastmcp run --transport http --port 8000
 
 # Run with different user (if needed)
-sudo -u username python main.py --port 8000
+sudo -u username python-mcp-server --port 8000
 ```
 
 ### Dependencies Missing
@@ -122,12 +132,14 @@ except Exception as e:
 **Debugging steps:**
 ```bash
 # Check server logs
-python main.py --port 8000 --log-level DEBUG
+python-mcp-server --port 8000
+# Or with FastMCP debug mode
+fastmcp dev
 
 # Test with curl
 curl -X POST http://localhost:8000/mcp \
   -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"ping","id":1}'
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"ping","arguments":{}},"id":1}'
 
 # Check firewall settings
 sudo ufw status
@@ -466,9 +478,11 @@ finally:
 
 ### Enable Debug Logging
 ```bash
-# Server debug mode
-export LOG_LEVEL=DEBUG
-python main.py --port 8000
+# Server debug mode with FastMCP
+fastmcp dev  # Includes debug logging and MCP Inspector
+
+# Or manual server startup
+python-mcp-server --port 8000
 
 # Client debug mode
 import logging
@@ -547,16 +561,18 @@ grep -i "error" /var/log/mcp-server.log
 ### Report Issues
 When reporting issues, include:
 
-1. Server version: `python main.py --version`
+1. Server version: `python-mcp-server --version` or `pip show python-mcp-server`
 2. Python version: `python --version`
-3. Operating system and version
-4. Full error message and stack trace
-5. Minimal reproduction code
-6. Server logs (with sensitive data removed)
+3. FastMCP version: `fastmcp --version`
+4. Operating system and version
+5. Full error message and stack trace
+6. Minimal reproduction code
+7. Server logs (with sensitive data removed)
+8. FastMCP configuration (`fastmcp.json` if used)
 
 ### Community Support
-- **GitHub Issues**: [github.com/deadmeme5441/python-interpreter-mcp/issues](https://github.com/deadmeme5441/python-interpreter-mcp/issues)
-- **Documentation**: [deadmeme5441.github.io/python-interpreter-mcp](https://deadmeme5441.github.io/python-interpreter-mcp)
+- **GitHub Issues**: [github.com/deadmeme5441/python-mcp-server/issues](https://github.com/deadmeme5441/python-mcp-server/issues)
+- **Documentation**: [deadmeme5441.github.io/python-mcp-server](https://deadmeme5441.github.io/python-mcp-server)
 - **Examples**: See [examples.md](examples.md) for working code patterns
 
 Most issues can be resolved by checking logs, verifying installation, and ensuring proper configuration. When in doubt, restart the server and kernel to clear any transient issues.

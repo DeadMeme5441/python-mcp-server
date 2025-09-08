@@ -5,19 +5,27 @@ import importlib
 
 def test_path_safety_helper(tmp_path: Path):
     os.environ["MCP_WORKSPACE_DIR"] = str(tmp_path)
-    app_mod = importlib.import_module("python_mcp_server.app")
-    # in workspace ok
-    p = app_mod._ensure_within_workspace(Path(tmp_path), Path("ok.txt"))
+    # Reload module to pick up new environment variable
+    import sys
+    if "python_mcp_server.server" in sys.modules:
+        del sys.modules["python_mcp_server.server"]
+    app_mod = importlib.import_module("python_mcp_server.server")
+    # in workspace ok  
+    p = app_mod._ensure_within_workspace(Path("ok.txt"))
     assert Path(p).parent == tmp_path
     # escape blocked
     import pytest
     with pytest.raises(Exception):
-        app_mod._ensure_within_workspace(Path(tmp_path), Path("../escape.txt"))
+        app_mod._ensure_within_workspace(Path("../escape.txt"))
 
 
 def test_render_tree_helper(tmp_path: Path):
     os.environ["MCP_WORKSPACE_DIR"] = str(tmp_path)
-    app_mod = importlib.import_module("python_mcp_server.app")
+    # Reload module to pick up new environment variable
+    import sys
+    if "python_mcp_server.server" in sys.modules:
+        del sys.modules["python_mcp_server.server"]
+    app_mod = importlib.import_module("python_mcp_server.server")
     # populate
     (tmp_path / "d1").mkdir()
     (tmp_path / "d1" / "f1.txt").write_text("1")
@@ -30,7 +38,11 @@ def test_render_tree_helper(tmp_path: Path):
 
 def test_snapshot_workspace_files_helper(tmp_path: Path):
     os.environ["MCP_WORKSPACE_DIR"] = str(tmp_path)
-    app_mod = importlib.import_module("python_mcp_server.app")
+    # Reload module to pick up new environment variable
+    import sys
+    if "python_mcp_server.server" in sys.modules:
+        del sys.modules["python_mcp_server.server"]
+    app_mod = importlib.import_module("python_mcp_server.server")
     _ = app_mod.create_app()
     before = {str(p.relative_to(tmp_path)) for p in tmp_path.rglob('*') if p.is_file()}
     (tmp_path / "x.txt").write_text("x")
@@ -40,7 +52,11 @@ def test_snapshot_workspace_files_helper(tmp_path: Path):
 
 def test_workspace_dirs_created(tmp_path: Path):
     os.environ["MCP_WORKSPACE_DIR"] = str(tmp_path)
-    app_mod = importlib.import_module("python_mcp_server.app")
+    # Reload module to pick up new environment variable
+    import sys
+    if "python_mcp_server.server" in sys.modules:
+        del sys.modules["python_mcp_server.server"]
+    app_mod = importlib.import_module("python_mcp_server.server")
     _ = app_mod.create_app()
     assert (tmp_path / "scripts").exists()
     assert (tmp_path / "outputs").exists()

@@ -1,6 +1,6 @@
 # Tools Reference
 
-Complete reference for all 20 MCP tools provided by the Python Interpreter server.
+Complete reference for all 20 MCP tools provided by the Python MCP Server v0.6.0. These tools work seamlessly with FastMCP clients and follow MCP protocol specifications.
 
 ## Core Execution Tools
 

@@ -1,6 +1,6 @@
 # API Reference
 
-Technical API documentation for the Python Interpreter MCP Server.
+Technical API documentation for the Python MCP Server v0.6.0 with FastMCP framework integration.
 
 ## MCP Protocol Implementation
 

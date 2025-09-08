@@ -1,6 +1,6 @@
 # Development Guide
 
-Contributing to and extending the Python Interpreter MCP Server.
+Contributing to and extending the Python MCP Server v0.6.0 with FastMCP integration.
 
 ## Development Setup
 
@@ -8,6 +8,7 @@ Contributing to and extending the Python Interpreter MCP Server.
 - Python 3.10+
 - uv package manager
 - Git
+- FastMCP CLI (optional but recommended)
 
 ### Getting Started
 ```bash
@@ -22,25 +23,29 @@ uv sync
 uv run pytest tests/ -v
 
 # Start development server
-python main.py --port 8000
+python-mcp-server --port 8000
+
+# Or use FastMCP for development (recommended)
+fastmcp dev  # Includes MCP Inspector and debug logging
 ```
 
-### Project Structure
+### v0.6.0 Project Structure
 ```
 python-mcp-server/
 ├── src/
 │   └── python_mcp_server/
-│       ├── __init__.py
-│       └── app.py              # FastMCP application
+│       ├── __init__.py         # Package initialization
+│       └── server.py           # Main FastMCP server
 ├── tests/
 │   ├── test_server.py          # Integration tests
 │   ├── test_sessions.py        # Session management tests
 │   └── unit/
 │       └── test_core_helpers.py
-├── docs/                       # Documentation
-├── main.py                     # Server entry point
-├── pyproject.toml             # Project configuration
+├── docs/                       # MkDocs documentation
+├── fastmcp.json               # FastMCP configuration
+├── pyproject.toml             # Project metadata (hatchling)
 ├── mkdocs.yml                 # Documentation config
+├── main.py.backup             # Backed up original entry point
 └── CLAUDE.md                  # Development notes
 ```
 
@@ -81,16 +86,14 @@ class KernelSession:
 The server uses FastMCP middleware for production features:
 
 ```python
-# Initialize FastMCP with middleware
-app = FastMCP(
-    name="python-interpreter-mcp",
-    version="0.5.0",
-    middleware=[
-        ErrorHandlingMiddleware(),
-        TimingMiddleware(), 
-        LoggingMiddleware()
-    ]
+# Initialize FastMCP with middleware (v0.6.0)
+mcp = FastMCP(
+    name="python-mcp-server",
+    version="0.6.0",
+    description="World-class Python interpreter with session management"
 )
+
+# Middleware is automatically configured by FastMCP
 ```
 
 ## Adding New Tools
@@ -294,13 +297,15 @@ uv run mypy src/ main.py
 
 ### Local Development
 ```bash
-# Run with debug logging
-export LOG_LEVEL=DEBUG
-python main.py --port 8000
+# Use FastMCP dev mode (recommended)
+fastmcp dev  # Includes debug logging, MCP Inspector, and hot reload
 
-# Enable kernel debug output
-export JUPYTER_LOG_LEVEL=DEBUG
-python main.py --port 8000
+# Manual server startup
+python-mcp-server --port 8000
+
+# Test different transports
+fastmcp run --transport http --port 8000
+fastmcp run --transport stdio  # For Claude Desktop testing
 ```
 
 ### Common Issues
@@ -362,7 +367,24 @@ RUN pip install uv
 RUN uv sync
 
 EXPOSE 8000
-CMD ["python", "main.py", "--port", "8000", "--host", "0.0.0.0"]
+CMD ["python-mcp-server", "--port", "8000", "--host", "0.0.0.0"]
+```
+
+### FastMCP Docker Deployment
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY . .
+
+# Install FastMCP and dependencies
+RUN pip install fastmcp uv
+RUN uv sync
+
+EXPOSE 8000
+
+# Use FastMCP for production deployment
+CMD ["fastmcp", "run", "--transport", "http", "--port", "8000", "--host", "0.0.0.0"]
 ```
 
 ### Production Configuration
@@ -397,10 +419,20 @@ export EXECUTION_TIMEOUT=300
 - [ ] Performance impact is considered
 
 ### Release Process
-1. Update version in `pyproject.toml`
-2. Update `CHANGELOG.md`
-3. Tag release: `git tag v0.5.0`
-4. Push: `git push --tags`
-5. GitHub Actions will build and publish
+1. Update version in `pyproject.toml` and `src/python_mcp_server/__init__.py`
+2. Update `CHANGELOG.md` with new features and fixes
+3. Test package build: `uv build`
+4. Test CLI command: `python-mcp-server --help`
+5. Test FastMCP integration: `fastmcp run`
+6. Tag release: `git tag v0.6.0`
+7. Push: `git push --tags`
+8. GitHub Actions will build and publish to PyPI
 
-This development guide provides everything needed to contribute to and extend the Python Interpreter MCP Server.
+### v0.6.0 Development Notes
+- **Package Structure**: Migrated to proper src-layout with hatchling
+- **FastMCP Integration**: Native configuration and CLI support
+- **CLI Entry Point**: Fixed `python-mcp-server` command
+- **Testing**: All tests updated for new package structure
+- **Documentation**: Comprehensive updates for v0.6.0
+
+This development guide provides everything needed to contribute to and extend the Python MCP Server v0.6.0.

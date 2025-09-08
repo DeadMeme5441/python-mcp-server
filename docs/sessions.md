@@ -1,10 +1,10 @@
 # Session Management
 
-Advanced session management capabilities for isolated Python execution environments.
+Advanced session management capabilities for isolated Python execution environments in Python MCP Server v0.6.0.
 
 ## Overview
 
-The Python Interpreter MCP Server provides session-based kernel isolation, allowing you to run multiple independent Python environments simultaneously. Each session maintains its own:
+The Python MCP Server provides session-based kernel isolation using Jupyter kernels, allowing you to run multiple independent Python environments simultaneously with FastMCP integration. Each session maintains its own:
 
 - Variable namespace and state
 - Imported modules and packages
