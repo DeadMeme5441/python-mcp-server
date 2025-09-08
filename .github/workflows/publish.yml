@@ -27,13 +27,16 @@ jobs:
       - name: Setup uv
         uses: astral-sh/setup-uv@v3
 
-      # Tests temporarily disabled for initial publish hardening
-      # - name: Install test tooling
-      #   run: |
-      #     uv run --with pytest --with httpx --no-project -- python -c "import sys; print('ok')"
-      # - name: Run tests
-      #   run: |
-      #     uv run --with pytest --with httpx pytest -q
+      - name: Install dependencies
+        run: |
+          uv sync
+
+      - name: Run tests
+        run: |
+          uv run pytest tests/ -v
+        env:
+          MPLBACKEND: Agg
+          PYTHONUNBUFFERED: "1"
 
       - name: Lint (ruff)
         run: |
