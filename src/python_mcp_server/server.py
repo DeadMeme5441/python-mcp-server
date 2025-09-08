@@ -3,6 +3,7 @@ import base64
 import atexit
 import uuid
 import os
+import sys
 import json
 import shutil
 import subprocess
@@ -83,7 +84,7 @@ class KernelSession:
         self.client = self.km.client()
         self.client.start_channels()
         self.is_active = True
-        print(f"Kernel Session '{self.session_id}' Started")
+        print(f"Kernel Session '{self.session_id}' Started", file=sys.stderr)
         
     def stop(self):
         """Stop this kernel session."""
@@ -93,7 +94,7 @@ class KernelSession:
         if self.km and self.km.is_alive():
             self.km.shutdown_kernel(now=True)
         self.is_active = False
-        print(f"Kernel Session '{self.session_id}' Stopped")
+        print(f"Kernel Session '{self.session_id}' Stopped", file=sys.stderr)
         
     def get_client(self):
         """Get the kernel client for this session."""
@@ -291,7 +292,7 @@ class KernelManagerSingleton:
             cls._instance = super(KernelManagerSingleton, cls).__new__(cls)
             cls._timeout_config = TimeoutConfig()
             cls._session_manager = SessionManager(cls._timeout_config)
-            print("Session-based Kernel Manager Initialized")
+            print("Session-based Kernel Manager Initialized", file=sys.stderr)
         return cls._instance
 
     def get_client(self):
