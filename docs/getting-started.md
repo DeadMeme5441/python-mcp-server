@@ -7,14 +7,14 @@ Get up and running with Python Interpreter MCP Server in minutes.
 ### From PyPI (Recommended)
 
 ```bash
-pip install python-interpreter-mcp
+pip install python-mcp-server
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/deadmeme5441/python-interpreter-mcp.git
-cd python-interpreter-mcp
+git clone https://github.com/deadmeme5441/python-mcp-server.git
+cd python-mcp-server
 uv sync
 ```
 
@@ -24,7 +24,7 @@ uv sync
 
 ```bash
 # Using the installed package
-python-interpreter-mcp --port 8000
+python-mcp-server --port 8000
 
 # Or from source
 python main.py --port 8000

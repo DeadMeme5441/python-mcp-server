@@ -1,10 +1,10 @@
 # Python Interpreter MCP Server
 
-[![CI](https://github.com/deadmeme5441/python-interpreter-mcp/workflows/CI/badge.svg)](https://github.com/deadmeme5441/python-interpreter-mcp/actions)
-[![PyPI](https://img.shields.io/pypi/v/python-interpreter-mcp.svg)](https://pypi.org/project/python-interpreter-mcp/)
+[![CI](https://github.com/deadmeme5441/python-mcp-server/workflows/CI/badge.svg)](https://github.com/deadmeme5441/python-mcp-server/actions)
+[![PyPI](https://img.shields.io/pypi/v/python-mcp-server.svg)](https://pypi.org/project/python-mcp-server/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://deadmeme5441.github.io/python-interpreter-mcp/)
+[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue.svg)](https://deadmeme5441.github.io/python-mcp-server/)
 
 A world-class Python interpreter MCP (Model Context Protocol) server that provides secure, isolated Python code execution with advanced session management and health monitoring.
 
@@ -34,14 +34,14 @@ A world-class Python interpreter MCP (Model Context Protocol) server that provid
 ### Installation
 
 ```bash
-pip install python-interpreter-mcp
+pip install python-mcp-server
 ```
 
 ### Basic Usage
 
 Start the server:
 ```bash
-python-interpreter-mcp --port 8000
+python-mcp-server --port 8000
 ```
 
 Connect with FastMCP client:
@@ -170,7 +170,7 @@ export PYTHONUNBUFFERED="1"               # Unbuffered output
 
 ### Command Line Options
 ```bash
-python-interpreter-mcp \
+python-mcp-server \
     --port 8000 \
     --host 0.0.0.0 \
     --workspace-dir ./custom_workspace \
@@ -195,7 +195,7 @@ Add to your MCP configuration:
 {
   "mcpServers": {
     "python-interpreter": {
-      "command": "python-interpreter-mcp",
+      "command": "python-mcp-server",
       "args": ["--port", "8000"]
     }
   }
@@ -222,8 +222,8 @@ async def call_tool(tool_name, arguments):
 
 ### Setup
 ```bash
-git clone https://github.com/deadmeme5441/python-interpreter-mcp.git
-cd python-interpreter-mcp
+git clone https://github.com/deadmeme5441/python-mcp-server.git
+cd python-mcp-server
 uv sync
 ```
 
@@ -253,11 +253,11 @@ uvx ruff format .
 
 ## 📚 Documentation
 
-- **[Complete Documentation](https://deadmeme5441.github.io/python-interpreter-mcp/)** - Full guides and API reference
-- **[Getting Started](https://deadmeme5441.github.io/python-interpreter-mcp/getting-started/)** - Installation and first steps
-- **[Architecture](https://deadmeme5441.github.io/python-interpreter-mcp/architecture/)** - Technical deep dive
-- **[Examples](https://deadmeme5441.github.io/python-interpreter-mcp/examples/)** - Practical usage patterns
-- **[Troubleshooting](https://deadmeme5441.github.io/python-interpreter-mcp/troubleshooting/)** - Common issues and solutions
+- **[Complete Documentation](https://deadmeme5441.github.io/python-mcp-server/)** - Full guides and API reference
+- **[Getting Started](https://deadmeme5441.github.io/python-mcp-server/getting-started/)** - Installation and first steps
+- **[Architecture](https://deadmeme5441.github.io/python-mcp-server/architecture/)** - Technical deep dive
+- **[Examples](https://deadmeme5441.github.io/python-mcp-server/examples/)** - Practical usage patterns
+- **[Troubleshooting](https://deadmeme5441.github.io/python-mcp-server/troubleshooting/)** - Common issues and solutions
 
 ## 🔒 Security
 
@@ -277,7 +277,7 @@ uvx ruff format .
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](https://deadmeme5441.github.io/python-interpreter-mcp/development/) for details.
+We welcome contributions! Please see our [Contributing Guide](https://deadmeme5441.github.io/python-mcp-server/development/) for details.
 
 1. Fork the repository
 2. Create your feature branch: `git checkout -b feature/amazing-feature`
@@ -298,16 +298,16 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🔗 Links
 
-- **PyPI**: [python-interpreter-mcp](https://pypi.org/project/python-interpreter-mcp/)
-- **Documentation**: [deadmeme5441.github.io/python-interpreter-mcp](https://deadmeme5441.github.io/python-interpreter-mcp/)
-- **Issues**: [GitHub Issues](https://github.com/deadmeme5441/python-interpreter-mcp/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/deadmeme5441/python-interpreter-mcp/discussions)
+- **PyPI**: [python-mcp-server](https://pypi.org/project/python-mcp-server/)
+- **Documentation**: [deadmeme5441.github.io/python-mcp-server](https://deadmeme5441.github.io/python-mcp-server/)
+- **Issues**: [GitHub Issues](https://github.com/deadmeme5441/python-mcp-server/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/deadmeme5441/python-mcp-server/discussions)
 
 ---
 
 <div align="center">
 
-**[⭐ Star this repo](https://github.com/deadmeme5441/python-interpreter-mcp) if you find it useful!**
+**[⭐ Star this repo](https://github.com/deadmeme5441/python-mcp-server) if you find it useful!**
 
 Built with ❤️ by [DeadMeme5441](https://github.com/DeadMeme5441)
 

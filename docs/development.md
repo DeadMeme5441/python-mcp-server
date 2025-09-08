@@ -12,8 +12,8 @@ Contributing to and extending the Python Interpreter MCP Server.
 ### Getting Started
 ```bash
 # Clone the repository
-git clone https://github.com/deadmeme5441/python-interpreter-mcp.git
-cd python-interpreter-mcp
+git clone https://github.com/deadmeme5441/python-mcp-server.git
+cd python-mcp-server
 
 # Install dependencies with uv
 uv sync
@@ -27,7 +27,7 @@ python main.py --port 8000
 
 ### Project Structure
 ```
-python-interpreter-mcp/
+python-mcp-server/
 ├── src/
 │   └── python_mcp_server/
 │       ├── __init__.py

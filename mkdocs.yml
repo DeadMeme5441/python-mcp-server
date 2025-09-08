@@ -1,7 +1,7 @@
-site_name: Python Interpreter MCP Server
+site_name: Python MCP Server
 site_description: A world-class Python interpreter MCP server with session management, kernel health monitoring, and FastMCP middleware
-site_url: https://deadmeme5441.github.io/python-interpreter-mcp/
-repo_url: https://github.com/deadmeme5441/python-interpreter-mcp
+site_url: https://deadmeme5441.github.io/python-mcp-server/
+repo_url: https://github.com/deadmeme5441/python-mcp-server
 
 theme:
   name: material
@@ -58,7 +58,7 @@ plugins:
   - search
   - llmstxt:
       markdown_description: |
-        python-interpreter-mcp is a world-class Python interpreter MCP (Model Context Protocol) server 
+        python-mcp-server is a world-class Python interpreter MCP (Model Context Protocol) server 
         that provides secure, isolated Python code execution with advanced session management and health monitoring.
         
         Key features:
