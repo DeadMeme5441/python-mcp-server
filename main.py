@@ -161,7 +161,8 @@ class KernelSession:
             while time.time() - start_time < timeout:
                 try:
                     msg = client.get_shell_msg(timeout=0.5)
-                    if msg['parent_header']['msg_id'] == msg_id:
+                    parent_msg_id = msg.get('parent_header', {}).get('msg_id')
+                    if parent_msg_id == msg_id:
                         return msg['content']['status'] == 'ok'
                 except Exception:
                     continue
@@ -448,7 +449,8 @@ print(f"STATE_SNAPSHOT:{_encoded_state}")
             while time.time() - start_time < timeout:
                 try:
                     msg = client.get_iopub_msg(timeout=1)
-                    if msg['parent_header']['msg_id'] != msg_id:
+                    parent_msg_id = msg.get('parent_header', {}).get('msg_id')
+                    if parent_msg_id != msg_id:
                         continue
                     
                     if msg['header']['msg_type'] == 'stream' and msg['content']['name'] == 'stdout':
@@ -516,7 +518,8 @@ except Exception as e:
             while time.time() - start_time < timeout:
                 try:
                     msg = client.get_iopub_msg(timeout=1)
-                    if msg['parent_header']['msg_id'] != msg_id:
+                    parent_msg_id = msg.get('parent_header', {}).get('msg_id')
+                    if parent_msg_id != msg_id:
                         continue
                     
                     if msg['header']['msg_type'] == 'stream' and msg['content']['name'] == 'stdout':
@@ -621,7 +624,9 @@ async def _execute_code_with_timeout(code: str, ctx: Context, timeout: float, co
             remaining_timeout = max(0.1, deadline - time.time())
             msg = client.get_iopub_msg(timeout=min(1.0, remaining_timeout))
             
-            if msg['parent_header']['msg_id'] != msg_id:
+            # Check if message belongs to our execution
+            parent_msg_id = msg.get('parent_header', {}).get('msg_id')
+            if parent_msg_id != msg_id:
                 continue
 
             msg_type = msg['header']['msg_type']
@@ -1142,7 +1147,8 @@ async def list_variables(ctx: Context) -> dict:
     while True:
         try:
             msg = client.get_iopub_msg(timeout=1)
-            if msg['parent_header']['msg_id'] != msg_id:
+            parent_msg_id = msg.get('parent_header', {}).get('msg_id')
+            if parent_msg_id != msg_id:
                 continue
             if msg['header']['msg_type'] == 'status' and msg['content']['execution_state'] == 'idle':
                 break
