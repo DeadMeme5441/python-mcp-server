@@ -10,7 +10,7 @@ This package provides a FastMCP-based server that offers:
 
 from .server import main
 
-__version__ = "0.6.0"
+__version__ = "0.6.2"
 __author__ = "DeadMeme5441"
 __email__ = "deadunderscorememe@gmail.com"
 

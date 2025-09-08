@@ -1498,6 +1498,7 @@ def main():
     """Main entry point for the Python MCP Server."""
     parser = argparse.ArgumentParser(description="Python Interpreter MCP")
     parser.add_argument("--workspace", type=str, default=os.environ.get("MCP_WORKSPACE_DIR", "workspace"), help="Workspace directory for files, scripts, outputs")
+    parser.add_argument("--transport", type=str, default="stdio", choices=["stdio", "http"], help="Transport mode (default: stdio)")
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
@@ -1512,7 +1513,10 @@ def main():
         for d in (WORKSPACE_DIR, SCRIPTS_DIR, OUTPUTS_DIR, UPLOADS_DIR):
             d.mkdir(parents=True, exist_ok=True)
 
-    mcp.run(transport="http", host=args.host, port=args.port)
+    if args.transport == "stdio":
+        mcp.run(transport="stdio")
+    else:
+        mcp.run(transport="http", host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
