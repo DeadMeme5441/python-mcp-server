@@ -1,203 +1,36 @@
-# Tools Reference
+# Tools Reference (v0.7+)
 
-Complete reference for all 20 MCP tools provided by the Python MCP Server v0.6.0. These tools work seamlessly with FastMCP clients and follow MCP protocol specifications.
+This server exposes a small, agent-friendly surface optimized for data analysis.
 
-## Core Execution Tools
+## Notebook (single surface)
 
-### `run_python_code`
-Execute Python code in the current session's kernel.
+`notebook(action=..., ...)` — one tool that handles cells, datasets, and export.
 
-**Parameters:**
-- `code` (str): Python code to execute
-- `timeout` (float, optional): Execution timeout in seconds
+- Actions
+  - `run`: Execute a code cell. Captures stdout, stderr, figures (PNG/SVG), JSON displays, and a workspace diff. Writes a per‑cell manifest to `outputs/notebooks/<id>/` and updates `index.json`.
+  - `cells`: List executed cells (from index.json).
+  - `cell`: Fetch a single cell’s manifest.
+  - `export`: Emit `.ipynb` (and `.html` if nbconvert is available) for handoff.
+  - `reset`: Clear manifests/counters for the same `notebook_id` (kernel not restarted).
+  - `datasets.register`: Create/update a DuckDB VIEW over CSV/Parquet files (paths or globs). Uses DuckDB’s Python engine safely (quoted literals).
+  - `datasets.list`: Show registered datasets and backing paths.
+  - `datasets.describe`: Return schema + head(50).
+  - `datasets.drop`: Remove a VIEW and its registry entry.
+  - `datasets.sql`: Run SQL across registered views; returns a JSON preview and writes the full result to `outputs/data/<id>/*.parquet`.
 
-**Returns:**
-- `stdout` (str): Standard output from execution
-- `stderr` (str): Error output (if any)  
-- `execution_time` (float): Time taken in seconds
-- `outputs` (list): Generated output files (plots, etc.)
-- `new_files` (list): New files created during execution
+## Core Execution
 
-**Example:**
-```python
-result = await client.call_tool("run_python_code", {
-    "code": """
-import matplotlib.pyplot as plt
-import numpy as np
+- `run_python_code`: Execute Python code with rich-display capture. Saves figures to `outputs/` and returns artifact paths.
+- `restart_kernel`: Restart the active kernel; optional state preservation.
 
-x = np.linspace(0, 2*np.pi, 100)
-y = np.sin(x)
+## Files
 
-plt.figure(figsize=(10, 6))
-plt.plot(x, y, 'b-', linewidth=2)
-plt.title('Sine Wave')
-plt.savefig('sine_wave.png')
-plt.show()
+- `list_files`: Flat or tree view of the workspace. Supports recursion and depth limits.
+- `read_file` / `write_file` / `delete_file`: Safe, sandboxed file operations.
 
-print("Plot saved as sine_wave.png")
-"""
-})
-```
+## Packages
 
-### `code_completion`
-Get intelligent code completions using IPython.
-
-**Parameters:**
-- `code` (str): Code context for completion
-- `cursor_pos` (int): Cursor position in the code
-
-**Returns:**
-- `matches` (list): List of completion suggestions
-- `cursor_start` (int): Start position for replacement
-- `cursor_end` (int): End position for replacement
-
-**Example:**
-```python
-result = await client.call_tool("code_completion", {
-    "code": "import numpy as np\nnp.lin",
-    "cursor_pos": 23
-})
-# Returns matches like ['linspace', 'linalg', ...]
-```
-
-### `inspect_object`
-Inspect Python objects for detailed information.
-
-**Parameters:**
-- `code` (str): Object/expression to inspect
-- `cursor_pos` (int): Position in the code
-- `detail_level` (int, optional): 0=signature, 1=full details
-
-**Returns:**
-- `found` (bool): Whether object was found
-- `data` (dict): Inspection results (signature, docstring, source, etc.)
-
-**Example:**
-```python
-result = await client.call_tool("inspect_object", {
-    "code": "numpy.linspace",
-    "cursor_pos": 13,
-    "detail_level": 1
-})
-```
-
-### `restart_kernel`
-Restart the current session's kernel.
-
-**Parameters:** None
-
-**Returns:**
-- `restarted` (bool): Whether restart was successful
-- `session_id` (str): ID of restarted session
-
-**Example:**
-```python
-result = await client.call_tool("restart_kernel")
-# All variables and imports are lost after restart
-```
-
-## File System Tools
-
-### `list_files`
-List files and directories in the workspace.
-
-**Parameters:**
-- `path` (str, optional): Directory to list (default: workspace root)
-- `recursive` (bool, optional): Include subdirectories  
-- `tree` (bool, optional): Show as tree structure
-- `max_depth` (int, optional): Maximum recursion depth
-
-**Returns:**
-- `files` (list): List of file paths
-- `tree` (str): Tree representation (if requested)
-
-**Example:**
-```python
-result = await client.call_tool("list_files", {
-    "path": "outputs",
-    "recursive": True,
-    "tree": True,
-    "max_depth": 3
-})
-```
-
-### `read_file`
-Read contents of a file.
-
-**Parameters:**
-- `path` (str): File path relative to workspace
-
-**Returns:**
-- `text` (str): File contents
-- `binary` (bool): Whether file was read as binary
-- `encoding` (str): Character encoding used
-
-**Example:**
-```python
-result = await client.call_tool("read_file", {
-    "path": "data/results.csv"
-})
-content = result.data["text"]
-```
-
-### `write_file`
-Write content to a file.
-
-**Parameters:**
-- `path` (str): File path relative to workspace
-- `content` (str): Content to write
-- `encoding` (str, optional): Character encoding (default: utf-8)
-
-**Returns:**
-- `path` (str): Full path where file was written
-- `size` (int): Size of written file in bytes
-
-**Example:**
-```python
-await client.call_tool("write_file", {
-    "path": "results/analysis.txt", 
-    "content": "Analysis complete\nAccuracy: 95.2%"
-})
-```
-
-### `delete_file`
-Delete a file or directory.
-
-**Parameters:**
-- `path` (str): Path to delete
-
-**Returns:**
-- `deleted` (bool): Whether deletion was successful
-- `path` (str): Path that was deleted
-
-**Example:**
-```python
-await client.call_tool("delete_file", {
-    "path": "temp/old_results.csv"
-})
-```
-
-## Script Management Tools
-
-### `save_script`
-Save Python code as a script file.
-
-**Parameters:**
-- `name` (str): Script name (without .py extension)
-- `content` (str): Python code content
-
-**Returns:**
-- `script` (str): Relative path to saved script
-- `full_path` (str): Absolute path to script
-
-**Example:**
-```python
-await client.call_tool("save_script", {
-    "name": "data_processor",
-    "content": """
-import pandas as pd
-
-def process_data(filename):
+- `install_dependencies`: Install packages into the current interpreter/venv. Prefers `uv`, falls back to `python -m pip`.
     df = pd.read_csv(filename)
     return df.describe()
 

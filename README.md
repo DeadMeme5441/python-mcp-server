@@ -23,11 +23,9 @@ A world-class Python interpreter MCP (Model Context Protocol) server that provid
 - **Error Resilience**: Graceful handling of kernel failures and timeouts
 
 ### 🛠 **Developer Experience**
-- **20 Comprehensive Tools**: From basic execution to advanced introspection
-- **Code Completion**: IPython-powered intelligent completions
+- **Notebook Surface**: One tool to run cells, manage datasets, and export artifacts
 - **File Management**: Read, write, delete operations with safety checks  
 - **Package Installation**: Dynamic dependency management with uv/pip
-- **Script Execution**: Save and run Python scripts with output capture
 
 ### 🎯 **FastMCP Integration**
 - **Native FastMCP Configuration**: Built-in `fastmcp.json` for easy deployment
@@ -144,68 +142,72 @@ docs/                  # Documentation source
 
 ## 🔧 Tools Reference
 
-### Core Execution
-- `run_python_code` - Execute Python with output capture
-- `code_completion` - IPython-powered completions
-- `inspect_object` - Object introspection and documentation
-- `restart_kernel` - Clean kernel restart with session awareness
+### Notebook (single surface)
+`notebook(action=..., ...)` — one tool for cells, datasets, and exports.
 
-### Session Management  
-- `create_session` - Create isolated kernel sessions
-- `switch_session` - Switch between sessions
-- `list_sessions` - View all active sessions
-- `delete_session` - Clean up sessions
+- Actions:
+  - `run` — execute a cell; capture stdout/stderr, figures (PNG/SVG), JSON outputs, and a workspace diff. Writes a manifest per cell under `outputs/notebooks/<id>/`.
+  - `cells` — list executed cells (from index.json).
+  - `cell` — fetch one cell’s manifest.
+  - `export` — write a `.ipynb` (and `.html` if available) to `outputs/notebooks/`.
+  - `reset` — clear notebook manifests for the same `notebook_id` (kernel is not restarted).
+  - `datasets.register` — create/update a DuckDB VIEW over CSV/Parquet files or globs.
+  - `datasets.list` — show registered datasets.
+  - `datasets.describe` — schema + head(50).
+  - `datasets.drop` — remove a registered dataset/view.
+  - `datasets.sql` — run SQL across registered views; returns preview and writes full result to Parquet.
+
+### Core Execution
+- `run_python_code` - Execute Python with output capture (rich display assets saved to `outputs/`)
+- `restart_kernel` - Clean kernel restart with optional state preservation
 
 ### File Operations
-- `list_files` - Browse workspace with tree view
-- `read_file` / `write_file` / `delete_file` - File operations
-- `save_script` / `run_script` - Script management
-
-### Health & Monitoring
-- `get_kernel_health` - Comprehensive health metrics
-- `check_kernel_responsiveness` - Test kernel response
+- `list_files` - Browse workspace (flat or tree view)
+- `read_file` / `write_file` / `delete_file` - Safe file operations
 
 ### Package Management
-- `install_dependencies` - Dynamic package installation
-- `list_variables` - Inspect kernel namespace
-
-### Utilities
-- `ping` - Connectivity test
-- `get_workspace_info` - Workspace configuration
+- `install_dependencies` - Dynamic dependency installation with uv/pip fallback
 
 ## 💡 Advanced Usage
 
-### Session-Based Workflows
-```python
-# Create isolated sessions for different tasks
-await client.call_tool("create_session", {
-    "session_id": "data_analysis",
-    "description": "Data science workflow"
-})
+### Notes
+- Session isolation, health and concurrency controls run under the hood; the public tool surface is intentionally minimal for agent reliability.
 
-await client.call_tool("create_session", {
-    "session_id": "ml_training", 
-    "description": "Model training pipeline"
-})
+## 🧰 Interpreter / Venv Configuration
 
-# Switch between sessions
-await client.call_tool("switch_session", {"session_id": "data_analysis"})
-# ... do data analysis work ...
+The server runs the Jupyter kernel with the same interpreter and environment as the process by default. You can override with flags in both stdio and http modes:
 
-await client.call_tool("switch_session", {"session_id": "ml_training"})  
-# ... do ML training work ...
+```bash
+python-mcp-server \
+  --python /path/to/python \
+  --venv /path/to/venv \
+  --pythonpath "/extra/dir1:/extra/dir2" \
+  --transport http --port 8000
 ```
 
-### Health Monitoring
-```python
-# Check system health
-health = await client.call_tool("get_kernel_health")
-if health.data["status"] != "healthy":
-    await client.call_tool("restart_kernel")
+Environment variables honored: `PYTHON`, `MPLBACKEND=Agg` (default), `MCP_MAX_CONCURRENT_CELLS`, `MCP_MEMORY_BUDGET_MB`, `MCP_SOFT_WATERMARK`, `MCP_HARD_WATERMARK`.
 
-# Monitor responsiveness  
-responsive = await client.call_tool("check_kernel_responsiveness")
-print(f"Response time: {responsive.data['response_time']:.3f}s")
+## 📊 Datasets (DuckDB-backed)
+
+Register CSV/Parquet files (or globs) as DuckDB views and query with SQL:
+
+```python
+# Register
+await client.call_tool("notebook", {
+  "action": "datasets.register",
+  "dataset_name": "sales",
+  "paths": ["data/sales_*.parquet"],
+  "format": "parquet"
+})
+
+# Describe
+await client.call_tool("notebook", {"action": "datasets.describe", "dataset_name": "sales"})
+
+# Query (preview + full Parquet result on disk)
+await client.call_tool("notebook", {
+  "action": "datasets.sql",
+  "query": "select date, sum(amount) as total from sales group by date order by date"
+})
 ```
 
 ## 🔧 Configuration

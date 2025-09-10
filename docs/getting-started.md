@@ -71,7 +71,7 @@ fastmcp run --transport http --port 8000
 
 The server will start on `http://localhost:8000` with MCP endpoint at `/mcp`.
 
-### 2. Connect with MCP Client
+### 2. Connect with MCP Client (Notebook Surface)
 
 ```python
 import asyncio
@@ -79,84 +79,28 @@ from fastmcp.client import Client
 
 async def main():
     async with Client("http://localhost:8000/mcp") as client:
-        # Execute simple Python code
-        result = await client.call_tool("run_python_code", {
-            "code": """
-import numpy as np
-import matplotlib.pyplot as plt
+        # Run a cell
+        await client.call_tool("notebook", {"action": "run", "code": "print('hello notebook')"})
 
-# Generate data
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-
-# Create plot
-plt.figure(figsize=(10, 6))
-plt.plot(x, y, 'b-', linewidth=2)
-plt.title('Sine Wave')
-plt.xlabel('X')
-plt.ylabel('sin(X)')
-plt.grid(True)
-plt.show()
-
-print("Plot created successfully!")
-"""
+        # Register Parquet files as a dataset
+        await client.call_tool("notebook", {
+            "action": "datasets.register",
+            "dataset_name": "sales",
+            "paths": ["data/sales_*.parquet"],
+            "format": "parquet"
         })
-        
-        print("Execution result:", result.data)
+
+        # Query with SQL (returns a small preview and saves full result to Parquet)
+        res = await client.call_tool("notebook", {"action": "datasets.sql", "query": "select count(*) from sales"})
+        print(res.data or res.structured_content)
 
 asyncio.run(main())
 ```
 
-### 3. Work with Sessions
+### 3. Export the Notebook
 
 ```python
-async def session_example():
-    async with Client("http://localhost:8000/mcp") as client:
-        # Create a new session for data analysis
-        await client.call_tool("create_session", {
-            "session_id": "data_analysis",
-            "description": "Data science workflow"
-        })
-        
-        # Switch to the new session
-        await client.call_tool("switch_session", {
-            "session_id": "data_analysis"
-        })
-        
-        # Set up data analysis environment
-        await client.call_tool("run_python_code", {
-            "code": """
-import pandas as pd
-import numpy as np
-
-# Create sample dataset
-data = {
-    'x': np.random.randn(1000),
-    'y': np.random.randn(1000) * 2 + 1,
-    'category': np.random.choice(['A', 'B', 'C'], 1000)
-}
-df = pd.DataFrame(data)
-
-print(f"Dataset shape: {df.shape}")
-print(df.head())
-"""
-        })
-        
-        # In a separate session, variables are isolated
-        await client.call_tool("create_session", {
-            "session_id": "modeling"
-        })
-        
-        await client.call_tool("switch_session", {
-            "session_id": "modeling"
-        })
-        
-        # This will fail - df doesn't exist in this session
-        result = await client.call_tool("run_python_code", {
-            "code": "print('df' in globals())"  # Will print False
-        })
-
-asyncio.run(session_example())
+await client.call_tool("notebook", {"action": "export", "export_to": "ipynb"})
 ```
 
 ## Claude Desktop Integration

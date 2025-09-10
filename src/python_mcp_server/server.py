@@ -23,6 +23,15 @@ from fastmcp.server.middleware.timing import TimingMiddleware
 from fastmcp.server.middleware.logging import LoggingMiddleware
 from fastmcp.exceptions import ToolError
 
+# Ensure consistent interpreter and plotting backend by default
+os.environ.setdefault("PYTHON", sys.executable)
+os.environ.setdefault("MPLBACKEND", "Agg")
+
+# Configurable interpreter/venv/PYTHONPATH (set via CLI in main())
+SELECTED_PYTHON = os.environ.get("PYTHON", sys.executable)
+VENV_PATH: str | None = None
+EXTRA_PYTHONPATH: list[str] = []
+
 # --- Timeout Configuration ---
 
 class TimeoutConfig:
@@ -78,8 +87,24 @@ class KernelSession:
         if self.is_active:
             return
             
-        self.km = KernelManager()
-        self.km.start_kernel()
+        # Build environment for the kernel
+        env = os.environ.copy()
+        # Prepend venv bin/Scripts if configured
+        if VENV_PATH:
+            bin_dir = Path(VENV_PATH) / ("Scripts" if os.name == "nt" else "bin")
+            env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
+            env["VIRTUAL_ENV"] = VENV_PATH
+        # Extend PYTHONPATH if provided
+        if EXTRA_PYTHONPATH:
+            env["PYTHONPATH"] = os.pathsep.join(EXTRA_PYTHONPATH + [env.get("PYTHONPATH", "")])
+        env.setdefault("MPLBACKEND", "Agg")
+
+        # Explicit kernel command to ensure interpreter parity
+        kernel_cmd = [SELECTED_PYTHON, "-m", "ipykernel", "-f", "{connection_file}"]
+
+        self.km = KernelManager(kernel_cmd=kernel_cmd)
+        cwd_dir = str(WORKSPACE_DIR) if 'WORKSPACE_DIR' in globals() else os.getcwd()
+        self.km.start_kernel(env=env, cwd=cwd_dir)
         self.start_time = time.time()
         self.client = self.km.client()
         self.client.start_channels()
@@ -765,84 +790,439 @@ async def run_python_code(code: str, ctx: Context) -> dict:
         base_timeout=kernel_manager._timeout_config.code_execution
     )
 
-async def _get_completions_with_timeout(code: str, cursor_pos: int, ctx: Context, timeout: float, context_msg: str) -> dict:
-    """Get code completions with enhanced timeout handling."""
-    await ctx.debug(f"Requesting completions at position {cursor_pos} - {context_msg}")
+# --- Notebook Manager (sessions, manifests, datasets) ---
+
+MAX_CONCURRENT_CELLS = int(os.environ.get("MCP_MAX_CONCURRENT_CELLS", "3"))
+SERVER_MEMORY_BUDGET_MB = int(os.environ.get("MCP_MEMORY_BUDGET_MB", "4096"))
+SOFT_WATERMARK = float(os.environ.get("MCP_SOFT_WATERMARK", "0.7"))
+HARD_WATERMARK = float(os.environ.get("MCP_HARD_WATERMARK", "0.85"))
+
+
+class NotebookSession:
+    def __init__(self, notebook_id: str):
+        self.id = notebook_id
+        self.lock = asyncio.Lock()
+        self.next_cell = 1
+        self.created_at = time.time()
+        self.manifest_dir = OUTPUTS_DIR / "notebooks" / notebook_id
+        self.manifest_dir.mkdir(parents=True, exist_ok=True)
+        self.index_path = self.manifest_dir / "index.json"
+        if not self.index_path.exists():
+            self._write_index({"notebook_id": notebook_id, "created_at": self.created_at, "cells": []})
+
+    def _read_index(self) -> dict:
+        try:
+            return json.loads(self.index_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"notebook_id": self.id, "created_at": self.created_at, "cells": []}
+
+    def _write_index(self, data: dict):
+        tmp = self.index_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, self.index_path)
+
+    def add_cell(self, cell_info: dict) -> None:
+        index = self._read_index()
+        index.setdefault("cells", []).append(cell_info)
+        self._write_index(index)
+
+
+class NotebookManager:
+    def __init__(self):
+        self.sessions: Dict[str, NotebookSession] = {}
+        self.semaphore = asyncio.Semaphore(MAX_CONCURRENT_CELLS)
+
+    def get_or_create(self, notebook_id: str | None) -> NotebookSession:
+        nid = notebook_id or str(uuid.uuid4())
+        if nid not in self.sessions:
+            self.sessions[nid] = NotebookSession(nid)
+        return self.sessions[nid]
+
+    def reset(self, notebook_id: str) -> bool:
+        sess = self.sessions.get(notebook_id)
+        if not sess:
+            return False
+        try:
+            for p in sess.manifest_dir.glob("cell_*_manifest.json"):
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+            sess._write_index({"notebook_id": sess.id, "created_at": sess.created_at, "cells": []})
+            sess.next_cell = 1
+            return True
+        except Exception:
+            return False
+
+
+notebooks = NotebookManager()
+
+
+async def _exec_json(ctx: Context, code: str, timeout: float, sentinel: str = "NOTEBOOK_JSON:") -> dict:
+    """Execute code and parse a JSON object from stdout prefixed by sentinel."""
     client = kernel_manager.get_client()
-    
     if not client:
         raise ToolError("Kernel client is not available")
-    
-    client.complete(code, cursor_pos)
-    
-    try:
-        msg = client.get_shell_msg(timeout=timeout)
-        await ctx.debug(f"Received {len(msg['content'].get('matches', []))} completion suggestions")
-        return msg['content']
-    except Exception as e:
-        raise ToolError(f"Failed to get code completions: {str(e)}")
+    msg_id = client.execute(code)
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            msg = client.get_iopub_msg(timeout=1)
+            if msg.get('parent_header', {}).get('msg_id') != msg_id:
+                continue
+            if msg['header']['msg_type'] == 'stream' and msg['content']['name'] == 'stdout':
+                text = msg['content']['text']
+                if sentinel in text:
+                    payload = text.split(sentinel, 1)[1].strip()
+                    try:
+                        return json.loads(payload)
+                    except Exception as e:
+                        raise ToolError(f"Failed to parse JSON from kernel: {e}")
+            elif msg['header']['msg_type'] in ('display_data', 'execute_result'):
+                data = msg['content'].get('data', {})
+                if 'application/json' in data:
+                    return data['application/json']
+            elif msg['header']['msg_type'] == 'status' and msg['content']['execution_state'] == 'idle':
+                # Execution finished but no sentinel was seen; allow a brief grace period
+                grace_start = time.time()
+                while time.time() - grace_start < 0.5:
+                    try:
+                        follow = client.get_iopub_msg(timeout=0.1)
+                        if follow.get('parent_header', {}).get('msg_id') != msg_id:
+                            continue
+                        if follow['header']['msg_type'] == 'stream' and follow['content']['name'] == 'stdout':
+                            text2 = follow['content']['text']
+                            if sentinel in text2:
+                                return json.loads(text2.split(sentinel, 1)[1].strip())
+                        elif follow['header']['msg_type'] in ('display_data', 'execute_result'):
+                            data2 = follow['content'].get('data', {})
+                            if 'application/json' in data2:
+                                return data2['application/json']
+                    except Exception:
+                        pass
+                return {"error": "no-json"}
+        except Exception:
+            continue
+    raise ToolError("Timed out waiting for JSON response from kernel")
+
+
+def _make_abs_glob(paths: list[str]) -> list[str]:
+    abs_paths: list[str] = []
+    for p in paths:
+        ap = _ensure_within_workspace(Path(p))
+        abs_paths.append(str(ap))
+    return abs_paths
+
 
 @mcp.tool
-async def code_completion(code: str, cursor_pos: int, ctx: Context) -> dict:
-    """Provide code completion suggestions from the Jupyter kernel with enhanced timeout handling.
+async def notebook(
+    ctx: Context,
+    action: str,
+    notebook_id: str | None = None,
+    code: str | None = None,
+    save_dfs: bool = False,
+    dataset_name: str | None = None,
+    paths: list[str] | None = None,
+    format: str | None = None,
+    engine: str = "duckdb",
+    query: str | None = None,
+    limit_preview: int = 1000,
+    cell_index: int | None = None,
+    export_to: str = "both"
+) -> dict:
+    """Unified notebook surface with cell execution and dataset actions.
 
-    Args:
-        code: Buffer contents to complete against.
-        cursor_pos: Cursor index within `code` to request completions for.
-        ctx: FastMCP request context.
-
-    Returns:
-        dict: Raw Jupyter completion reply.
+    Actions:
+      - run: execute a cell, capture artifacts, write manifest, return paths
+      - cells: list executed cells
+      - cell: return a single cell's manifest
+      - export: export .ipynb and/or HTML index
+      - reset: clear manifests and counters (kernel is not restarted)
+      - datasets.register/list/describe/drop/sql (duckdb default)
     """
-    # Use the enhanced timeout handling with retry logic
-    async def completion_operation(timeout: float, context_msg: str):
-        return await _get_completions_with_timeout(code, cursor_pos, ctx, timeout, context_msg)
-    
-    return await kernel_manager.execute_with_retry(
-        "Code completion",
-        completion_operation,
-        base_timeout=kernel_manager._timeout_config.completion
-    )
+    vm = psutil.virtual_memory()
+    if vm.total > 0 and (vm.used / vm.total) > HARD_WATERMARK:
+        raise ToolError("RESOURCE_LIMIT: memory watermark exceeded; try later")
 
-async def _inspect_object_with_timeout(code: str, cursor_pos: int, ctx: Context, detail_level: int, timeout: float, context_msg: str) -> dict:
-    """Inspect object with enhanced timeout handling."""
-    await ctx.debug(f"Inspecting object at position {cursor_pos} with detail level {detail_level} - {context_msg}")
-    client = kernel_manager.get_client()
-    
-    if not client:
-        raise ToolError("Kernel client is not available")
-    
-    client.inspect(code, cursor_pos, detail_level)
-    
+    sess = notebooks.get_or_create(notebook_id)
+
+    if action == "run":
+        if not code:
+            raise ToolError("'code' is required for action=run")
+        async with notebooks.semaphore:
+            async with sess.lock:
+                async def exec_op(timeout: float, context_msg: str):
+                    return await _execute_code_with_timeout(code, ctx, timeout, context_msg)
+
+                result = await kernel_manager.execute_with_retry(
+                    f"Notebook cell execution #{sess.next_cell}",
+                    exec_op,
+                    base_timeout=kernel_manager._timeout_config.code_execution,
+                )
+
+                df_manifest: dict[str, Any] = {"dataframes": []}
+                if save_dfs:
+                    cell_tag = f"cell_{sess.next_cell}"
+                    save_code = f"""
+import json, os
+from pathlib import Path
+import pandas as pd
+_out = []
+for _k,_v in list(globals().items()):
     try:
-        msg = client.get_shell_msg(timeout=timeout)
-        await ctx.debug("Object inspection completed")
-        return msg['content']
-    except Exception as e:
-        raise ToolError(f"Failed to inspect object: {str(e)}")
+        import pandas as pd
+        if isinstance(_v, pd.DataFrame):
+            _rows, _cols = _v.shape
+            _base = f"{cell_tag}_{{_k}}"
+            _dir = r"{str((OUTPUTS_DIR / 'data' / sess.id).as_posix())}"
+            Path(_dir).mkdir(parents=True, exist_ok=True)
+            _parquet = os.path.join(_dir, _base + ".parquet")
+            try:
+                _v.to_parquet(_parquet)
+                _saved = _parquet
+            except Exception:
+                _csv = os.path.join(_dir, _base + ".csv")
+                _v.to_csv(_csv, index=False)
+                _saved = _csv
+            _head_csv = os.path.join(_dir, _base + "_head.csv")
+            _v.head(50).to_csv(_head_csv, index=False)
+            _out.append({"name": _k, "rows": _rows, "cols": _cols, "path": _saved, "preview_path": _head_csv})
+    except Exception:
+        pass
+print("NOTEBOOK_JSON:" + json.dumps({"dataframes": _out}))
+"""
+                    df_manifest = await _exec_json(ctx, save_code, timeout=kernel_manager._timeout_config.state_operations)
 
-@mcp.tool
-async def inspect_object(code: str, cursor_pos: int, ctx: Context, detail_level: int = 0) -> dict:
-    """Inspect an object/expression within the kernel namespace with enhanced timeout handling.
+                manifest = {
+                    "notebook_id": sess.id,
+                    "cell_index": sess.next_cell,
+                    "created_at": time.time(),
+                    "code": code,
+                    "stdout": result.get("stdout", "")[:65536],
+                    "stderr": result.get("stderr", "")[:65536],
+                    "outputs": result.get("outputs", []),
+                    "results": result.get("results", []),
+                    "new_files": result.get("new_files", []),
+                    **df_manifest,
+                }
+                manifest_path = sess.manifest_dir / f"cell_{sess.next_cell:04d}_manifest.json"
+                manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    Args:
-        code: Buffer containing the target expression.
-        cursor_pos: Cursor index within `code` to inspect.
-        ctx: FastMCP request context.
-        detail_level: Jupyter detail level (0 minimal, higher is more verbose).
+                sess.add_cell({
+                    "cell_index": sess.next_cell,
+                    "created_at": manifest["created_at"],
+                    "n_outputs": len(manifest.get("outputs", [])),
+                    "n_dataframes": len(manifest.get("dataframes", [])),
+                })
 
-    Returns:
-        dict: Raw Jupyter inspection reply.
-    """
-    # Use the enhanced timeout handling with retry logic
-    async def inspection_operation(timeout: float, context_msg: str):
-        return await _inspect_object_with_timeout(code, cursor_pos, ctx, detail_level, timeout, context_msg)
-    
-    return await kernel_manager.execute_with_retry(
-        "Object inspection",
-        inspection_operation,
-        base_timeout=kernel_manager._timeout_config.inspection
-    )
+                sess.next_cell += 1
+                return {
+                    "status": "completed",
+                    "notebook_id": sess.id,
+                    "cell_index": sess.next_cell - 1,
+                    "manifest": str(manifest_path.relative_to(WORKSPACE_DIR)),
+                    "artifacts": manifest.get("outputs", []) + [df.get("path") for df in manifest.get("dataframes", []) if df.get("path")],
+                }
+
+    if action == "cells":
+        idx = json.loads((sess.index_path).read_text(encoding="utf-8"))
+        return idx
+
+    if action == "cell":
+        if cell_index is None:
+            raise ToolError("'cell_index' is required for action=cell")
+        path = sess.manifest_dir / f"cell_{int(cell_index):04d}_manifest.json"
+        if not path.exists():
+            raise ToolError(f"Cell {cell_index} not found")
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    if action == "export":
+        ipynb_path = OUTPUTS_DIR / "notebooks" / f"{sess.id}.ipynb"
+        try:
+            import nbformat as nbf
+            nb = nbf.v4.new_notebook()
+            index = json.loads(sess.index_path.read_text(encoding="utf-8"))
+            cells = []
+            for entry in index.get("cells", []):
+                cpath = sess.manifest_dir / f"cell_{entry['cell_index']:04d}_manifest.json"
+                manifest = json.loads(cpath.read_text(encoding="utf-8"))
+                cells.append(nbf.v4.new_code_cell(manifest.get("code", "")))
+                outputs = []
+                if manifest.get("stdout"):
+                    outputs.append(nbf.v4.new_output("stream", name="stdout", text=manifest["stdout"]))
+                if manifest.get("stderr"):
+                    outputs.append(nbf.v4.new_output("stream", name="stderr", text=manifest["stderr"]))
+                cells[-1]["outputs"] = outputs
+            nb["cells"] = cells
+            ipynb_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(ipynb_path, "w", encoding="utf-8") as f:
+                nbf.write(nb, f)
+            html_path = OUTPUTS_DIR / "notebooks" / f"{sess.id}.html"
+            html_done = False
+            if export_to in ("html", "both"):
+                try:
+                    from nbconvert import HTMLExporter
+                    exp = HTMLExporter()
+                    (body, _) = exp.from_notebook_node(nb)
+                    html_path.write_text(body, encoding="utf-8")
+                    html_done = True
+                except Exception:
+                    links = []
+                    index = json.loads(sess.index_path.read_text(encoding="utf-8"))
+                    for entry in index.get("cells", []):
+                        rel = str((sess.manifest_dir / f"cell_{entry['cell_index']:04d}_manifest.json").relative_to(WORKSPACE_DIR))
+                        links.append(f"<li><a href='/files/download/{rel}'>Cell {entry['cell_index']}</a></li>")
+                    html_path.write_text("<ul>" + "\n".join(links) + "</ul>", encoding="utf-8")
+                    html_done = True
+            return {
+                "ipynb": str(ipynb_path.relative_to(WORKSPACE_DIR)),
+                "html": str(html_path.relative_to(WORKSPACE_DIR)) if export_to in ("html", "both") and html_done else None,
+            }
+        except Exception as e:
+            return {"index": str(sess.index_path.relative_to(WORKSPACE_DIR)), "error": str(e)}
+
+    if action == "reset":
+        if notebooks.reset(sess.id):
+            return {"status": "reset", "notebook_id": sess.id}
+        raise ToolError("Failed to reset notebook")
+
+    if action == "datasets.register":
+        if not dataset_name or not paths:
+            raise ToolError("'dataset_name' and 'paths' are required")
+        abs_globs = _make_abs_glob(paths)
+        fmt = (format or "parquet").lower()
+        if engine != "duckdb":
+            raise ToolError("Only engine='duckdb' is supported currently")
+        code = ("""
+import duckdb, json
+_emit = lambda obj: print('NOTEBOOK_JSON:' + json.dumps(obj))
+try:
+    if 'DUCKDB_CONN' not in globals():
+        DUCKDB_CONN = duckdb.connect()
+    if 'DATASETS_DUCKDB' not in globals():
+        DATASETS_DUCKDB = {}
+    _name = %(name_json)s
+    _paths = %(paths_json)s
+    _fmt = %(fmt_json)s
+    def _qident(s: str) -> str:
+        return '"' + s.replace('"','""') + '"'
+    # Build view using safely quoted literals (DuckDB doesn't allow preparing these statements)
+    def _qlit(s: str) -> str:
+        return "'" + s.replace("'","''") + "'"
+    if isinstance(_paths, list) and len(_paths) > 1:
+        if _fmt == 'parquet':
+            selects = ["SELECT * FROM read_parquet(" + _qlit(p) + ")" for p in _paths]
+        else:
+            selects = ["SELECT * FROM read_csv_auto(" + _qlit(p) + ")" for p in _paths]
+        sql = "CREATE OR REPLACE VIEW " + _qident(_name) + " AS " + " UNION ALL ".join(selects)
+        DUCKDB_CONN.execute(sql)
+    else:
+        _glob = _paths if isinstance(_paths, str) else _paths[0]
+        if _fmt == 'parquet':
+            DUCKDB_CONN.execute("CREATE OR REPLACE VIEW " + _qident(_name) + " AS SELECT * FROM read_parquet(" + _qlit(_glob) + ")")
+        else:
+            DUCKDB_CONN.execute("CREATE OR REPLACE VIEW " + _qident(_name) + " AS SELECT * FROM read_csv_auto(" + _qlit(_glob) + ")")
+    DATASETS_DUCKDB[_name] = {"paths": _paths if isinstance(_paths, list) else [_paths], "format": _fmt}
+    _schema = DUCKDB_CONN.execute("PRAGMA table_info(" + _qident(_name) + ")").fetchall()
+    _cols = [[r[1], r[2]] for r in _schema]
+    _head = DUCKDB_CONN.execute("SELECT * FROM " + _qident(_name) + " LIMIT 50").fetchall()
+    _emit({"name": _name, "paths": DATASETS_DUCKDB[_name]["paths"], "format": _fmt, "schema": _cols, "head": _head})
+except Exception as e:
+    _emit({"error": str(e)})
+""" % {
+            "name_json": json.dumps(dataset_name),
+            "paths_json": json.dumps(abs_globs if len(abs_globs) > 1 else abs_globs[0]),
+            "fmt_json": json.dumps(fmt),
+        })
+        data = await _exec_json(ctx, code, timeout=kernel_manager._timeout_config.state_operations)
+        return data
+
+    if action == "datasets.list":
+        code = """
+import json
+datasets = []
+if 'DATASETS_DUCKDB' in globals():
+    for k,v in DATASETS_DUCKDB.items():
+        datasets.append({"name": k, **v})
+print("NOTEBOOK_JSON:" + json.dumps({"duckdb": datasets}))
+"""
+        return await _exec_json(ctx, code, timeout=kernel_manager._timeout_config.kernel_response)
+
+    if action == "datasets.describe":
+        if not dataset_name:
+            raise ToolError("'dataset_name' is required")
+        code = ("""
+import duckdb, json
+_emit = lambda obj: print('NOTEBOOK_JSON:' + json.dumps(obj))
+try:
+    if 'DUCKDB_CONN' not in globals():
+        DUCKDB_CONN = duckdb.connect()
+    def _qident(s: str) -> str:
+        return '"' + s.replace('"','""') + '"'
+    _schema = DUCKDB_CONN.execute("PRAGMA table_info(" + _qident('%(name)s') + ")").fetchall()
+    _cols = [[r[1], r[2]] for r in _schema]
+    _head = DUCKDB_CONN.execute("SELECT * FROM " + _qident('%(name)s') + " LIMIT 50").fetchall()
+    _emit({"schema": _cols, "head": _head})
+except Exception as e:
+    _emit({"error": str(e)})
+""" % {"name": dataset_name})
+        return await _exec_json(ctx, code, timeout=kernel_manager._timeout_config.kernel_response)
+
+    if action == "datasets.drop":
+        if not dataset_name:
+            raise ToolError("'dataset_name' is required")
+        code = ("""
+import duckdb, json
+_emit = lambda obj: print('NOTEBOOK_JSON:' + json.dumps(obj))
+try:
+    if 'DUCKDB_CONN' not in globals():
+        DUCKDB_CONN = duckdb.connect()
+    try:
+        DUCKDB_CONN.execute("DROP VIEW IF EXISTS %(name)s")
+    except Exception:
+        pass
+    if 'DATASETS_DUCKDB' in globals():
+        DATASETS_DUCKDB.pop("%(name)s", None)
+    _emit({"dropped": "%(name)s"})
+except Exception as e:
+    _emit({"error": str(e)})
+""" % {"name": dataset_name})
+        return await _exec_json(ctx, code, timeout=kernel_manager._timeout_config.kernel_response)
+
+    if action == "datasets.sql":
+        if not query:
+            raise ToolError("'query' is required for datasets.sql")
+        out_dir = OUTPUTS_DIR / "data" / sess.id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_file = out_dir / f"cell_{sess.next_cell:04d}_query_{uuid.uuid4().hex}.parquet"
+        _query_json = json.dumps(query)
+        _out_path = str(out_file.as_posix())
+        _rel_path = str(out_file.relative_to(WORKSPACE_DIR))
+        code = ("""
+import duckdb, json
+_emit = lambda obj: print('NOTEBOOK_JSON:' + json.dumps(obj))
+try:
+    if 'DUCKDB_CONN' not in globals():
+        DUCKDB_CONN = duckdb.connect()
+    _res = DUCKDB_CONN.execute(%(query_json)s)
+    _preview = _res.fetchmany(%(limit)d)
+    _cols = [d[0] for d in _res.description]
+    # COPY doesn't support prepared parameters for file path; use quoted literal
+    def _qlit(s: str) -> str:
+        return "'" + s.replace("'","''") + "'"
+    DUCKDB_CONN.execute("COPY (" + %(query_json)s + ") TO " + _qlit('%(out_path)s') + " (FORMAT PARQUET)")
+    _emit({"columns": _cols, "rows": _preview, "result_path": "%(rel_path)s"})
+except Exception as e:
+    _emit({"error": str(e)})
+""" % {
+            "query_json": _query_json,
+            "limit": min(limit_preview, 10000),
+            "out_path": _out_path,
+            "rel_path": _rel_path,
+        })
+        return await _exec_json(ctx, code, timeout=kernel_manager._timeout_config.state_operations)
+
+    raise ToolError(f"Unknown action: {action}")
 
 def _render_tree(root: Path, max_depth: int | None = 3, include_files: bool = True, include_dirs: bool = True) -> str:
     def is_included(p: Path) -> bool:
@@ -947,18 +1327,6 @@ async def list_files(
         return {"root": str(base.relative_to(WORKSPACE_DIR)) if base != WORKSPACE_DIR else ".", "files": sorted(entries)}
 
 @mcp.tool
-async def ping(ctx: Context) -> dict:
-    """Health check for the MCP server.
-
-    Args:
-        ctx: FastMCP request context.
-
-    Returns:
-        dict: {ok: True}
-    """
-    return {"ok": True}
-
-@mcp.tool
 async def delete_file(filename: str, ctx: Context) -> dict:
     """Delete a file from the workspace.
 
@@ -1044,72 +1412,6 @@ async def write_file(path: str, content: str, ctx: Context, binary_base64: bool 
         raise ToolError(f"Error writing file {path}: {str(e)}")
 
 @mcp.tool
-async def save_script(name: str, content: str, ctx: Context) -> dict:
-    """Save a Python script under `scripts/`.
-
-    Args:
-        name: Script filename; `.py` appended if missing.
-        content: Python source code.
-        ctx: FastMCP request context.
-
-    Returns:
-        dict: {script} relative path under the workspace; or {error}.
-    """
-    await ctx.debug(f"Saving script: {name}")
-    if not name.endswith(".py"):
-        name = f"{name}.py"
-    try:
-        target = _ensure_within_workspace(SCRIPTS_DIR / name)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        await ctx.debug(f"Successfully saved script: {name}")
-        return {"script": str(target.relative_to(WORKSPACE_DIR))}
-    except Exception as e:
-        raise ToolError(f"Error saving script {name}: {str(e)}")
-
-@mcp.tool
-async def run_script(path: str, ctx: Context, args: list[str] | None = None, timeout: int = 120) -> dict:
-    """Run a Python script in a subprocess and report artifacts.
-
-    Args:
-        path: Relative script path under the workspace.
-        ctx: FastMCP request context.
-        args: Optional subprocess arguments.
-        timeout: Seconds until execution times out.
-
-    Returns:
-        dict: {stdout, stderr, returncode, new_files}; or {error}.
-    """
-    await ctx.info(f"Running script: {path} with args: {args}")
-    try:
-        script_path = _ensure_within_workspace(Path(path))
-    except Exception:
-        await ctx.warning(f"Invalid script path: {path}")
-        raise ToolError(f"Invalid script path: {path}")
-    if not script_path.exists():
-        raise ToolError(f"Script not found: {path}")
-    if args is None:
-        args = []
-    before = _snapshot_workspace_files()
-    try:
-        proc = subprocess.run(
-            [os.environ.get("PYTHON", "python"), str(script_path)] + list(args),
-            cwd=str(WORKSPACE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        stdout = proc.stdout
-        stderr = proc.stderr
-        rc = proc.returncode
-    except subprocess.TimeoutExpired:
-        await ctx.warning(f"Script execution timed out after {timeout}s: {path}")
-        raise ToolError(f"Script execution timed out after {timeout} seconds")
-    after = _snapshot_workspace_files()
-    new_files = sorted(list(after - before))
-    return {"stdout": stdout, "stderr": stderr, "returncode": rc, "new_files": new_files}
-
-@mcp.tool
 async def install_dependencies(packages: list[str], ctx: Context) -> dict:
     """Install Python packages into the current environment.
 
@@ -1144,42 +1446,6 @@ async def install_dependencies(packages: list[str], ctx: Context) -> dict:
     return last
 
 @mcp.tool
-async def list_variables(ctx: Context) -> dict:
-    """List variable names in the kernel's global namespace (best-effort).
-
-    Args:
-        ctx: FastMCP request context.
-
-    Returns:
-        dict: {variables: list[str]} of non-private globals (modules filtered).
-    """
-    await ctx.debug("Listing kernel variables")
-    client = kernel_manager.get_client()
-    code = (
-        "import builtins,types\n"
-        "_vars=[k for k,v in globals().items() if not k.startswith('_') and not isinstance(v, types.ModuleType)]\n"
-        "print('\n'.join(sorted(_vars)))\n"
-    )
-    msg_id = client.execute(code)
-    names = []
-    while True:
-        try:
-            msg = client.get_iopub_msg(timeout=1)
-            parent_msg_id = msg.get('parent_header', {}).get('msg_id')
-            if parent_msg_id != msg_id:
-                continue
-            if msg['header']['msg_type'] == 'status' and msg['content']['execution_state'] == 'idle':
-                break
-            if msg['header']['msg_type'] == 'stream' and msg['content']['name'] == 'stdout':
-                stdout_text = msg['content']['text']
-                names.extend([line for line in stdout_text.splitlines() if line.strip()])
-        except asyncio.TimeoutError:
-            break
-        except Exception:
-            break
-    return {"variables": sorted(set(names))}
-
-@mcp.tool
 async def restart_kernel(ctx: Context, preserve_state: bool = False) -> dict:
     """Restart the Jupyter kernel with optional state preservation.
 
@@ -1191,7 +1457,7 @@ async def restart_kernel(ctx: Context, preserve_state: bool = False) -> dict:
         dict: {restarted: True, preserved_vars: count} on success.
     """
     await ctx.info(f"Restarting Jupyter kernel (preserve_state: {preserve_state})")
-    
+
     saved_state = None
     preserved_count = 0
     
@@ -1247,226 +1513,6 @@ async def restart_kernel(ctx: Context, preserve_state: bool = False) -> dict:
         await ctx.error(f"Failed to restart kernel: {str(e)}")
         raise ToolError(f"Failed to restart kernel: {str(e)}")
 
-@mcp.tool
-async def get_workspace_info(ctx: Context) -> dict:
-    """Return absolute paths for the active workspace layout.
-
-    Args:
-        ctx: FastMCP request context.
-
-    Returns:
-        dict: {workspace, scripts, outputs, uploads} absolute paths.
-    """
-    await ctx.debug("Getting workspace info")
-    return {
-        "workspace": str(WORKSPACE_DIR),
-        "scripts": str(SCRIPTS_DIR),
-        "outputs": str(OUTPUTS_DIR),
-        "uploads": str(UPLOADS_DIR),
-    }
-
-@mcp.tool
-async def get_kernel_health(ctx: Context) -> dict:
-    """Get comprehensive kernel health metrics and diagnostics.
-    
-    Args:
-        ctx: FastMCP request context.
-        
-    Returns:
-        dict: Comprehensive kernel health information including uptime, memory usage,
-              execution statistics, and process information.
-    """
-    await ctx.debug("Getting kernel health metrics")
-    
-    health_metrics = kernel_manager.get_health_metrics()
-    
-    # Add system-level information
-    try:
-        system_info = {
-            "system_memory_mb": round(psutil.virtual_memory().available / 1024 / 1024, 2),
-            "system_cpu_percent": psutil.cpu_percent(interval=0.1),
-            "disk_free_gb": round(psutil.disk_usage(str(WORKSPACE_DIR)).free / 1024 / 1024 / 1024, 2)
-        }
-        health_metrics["system"] = system_info
-    except Exception as e:
-        health_metrics["system"] = {"error": f"Could not get system info: {str(e)}"}
-    
-    await ctx.info(f"Kernel status: {health_metrics['status']}, uptime: {health_metrics.get('uptime', 0)}s")
-    return health_metrics
-
-@mcp.tool  
-async def check_kernel_responsiveness(ctx: Context, timeout: float = 5.0) -> dict:
-    """Check if the kernel is responsive by sending a test request.
-    
-    Args:
-        ctx: FastMCP request context.
-        timeout: Maximum time to wait for kernel response in seconds.
-        
-    Returns:
-        dict: Responsiveness check results including response time and status.
-    """
-    await ctx.debug(f"Checking kernel responsiveness with timeout: {timeout}s")
-    
-    start_time = time.time()
-    is_responsive = kernel_manager.is_responsive(timeout)
-    response_time = time.time() - start_time
-    
-    result = {
-        "responsive": is_responsive,
-        "response_time": round(response_time, 3),
-        "timeout": timeout
-    }
-    
-    if is_responsive:
-        await ctx.info(f"Kernel is responsive (response time: {response_time:.3f}s)")
-    else:
-        await ctx.warning(f"Kernel is not responsive after {timeout}s timeout")
-        
-    return result
-
-@mcp.tool
-async def create_session(ctx: Context, session_id: str = None, description: str = None) -> dict:
-    """Create a new isolated kernel session.
-    
-    Each session runs its own independent Python kernel with isolated state.
-    
-    Args:
-        ctx: FastMCP request context.
-        session_id: Optional custom session ID. If not provided, will auto-generate one.
-        description: Optional description/metadata for the session.
-        
-    Returns:
-        dict: Information about the created session including its ID.
-    """
-    await ctx.info(f"Creating new kernel session: {session_id or 'auto-generated'}")
-    
-    metadata = {}
-    if description:
-        metadata["description"] = description
-        metadata["created_at"] = time.time()
-    
-    try:
-        created_session_id = kernel_manager._session_manager.create_session(session_id, metadata)
-        await ctx.info(f"Successfully created session: {created_session_id}")
-        
-        return {
-            "session_id": created_session_id,
-            "status": "created",
-            "metadata": metadata,
-            "timestamp": time.time()
-        }
-    except Exception as e:
-        await ctx.error(f"Failed to create session: {str(e)}")
-        raise ToolError(f"Failed to create session: {str(e)}")
-
-@mcp.tool
-async def switch_session(session_id: str, ctx: Context) -> dict:
-    """Switch to a different kernel session.
-    
-    All subsequent operations will execute in the specified session.
-    
-    Args:
-        session_id: The ID of the session to switch to.
-        ctx: FastMCP request context.
-        
-    Returns:
-        dict: Information about the session switch including previous and new active sessions.
-    """
-    previous_session = kernel_manager._session_manager.active_session_id
-    await ctx.info(f"Switching from session '{previous_session}' to '{session_id}'")
-    
-    try:
-        kernel_manager._session_manager.switch_session(session_id)
-        await ctx.info(f"Successfully switched to session: {session_id}")
-        
-        return {
-            "previous_session": previous_session,
-            "current_session": session_id,
-            "status": "switched",
-            "timestamp": time.time()
-        }
-    except Exception as e:
-        await ctx.error(f"Failed to switch session: {str(e)}")
-        raise ToolError(f"Failed to switch session: {str(e)}")
-
-@mcp.tool
-async def list_sessions(ctx: Context) -> dict:
-    """List all available kernel sessions and their status.
-    
-    Shows information about all sessions including which one is currently active.
-    
-    Args:
-        ctx: FastMCP request context.
-        
-    Returns:
-        dict: Information about all sessions including status, execution counts, and metadata.
-    """
-    await ctx.debug("Retrieving list of all kernel sessions")
-    
-    sessions_info = kernel_manager._session_manager.list_sessions()
-    
-    # Add health metrics for active sessions
-    detailed_sessions = {}
-    for session_id, info in sessions_info["sessions"].items():
-        detailed_info = info.copy()
-        if info["active"]:
-            try:
-                session = kernel_manager._session_manager.get_session(session_id)
-                health = session.get_health_metrics()
-                detailed_info["health"] = health
-            except Exception:
-                detailed_info["health"] = {"status": "error", "error": "Could not get health metrics"}
-        detailed_sessions[session_id] = detailed_info
-    
-    result = {
-        **sessions_info,
-        "sessions": detailed_sessions,
-        "timestamp": time.time()
-    }
-    
-    await ctx.info(f"Found {len(detailed_sessions)} sessions, active: {sessions_info['active_session']}")
-    return result
-
-@mcp.tool
-async def delete_session(session_id: str, ctx: Context) -> dict:
-    """Delete a kernel session and free its resources.
-    
-    Note: Cannot delete the default session. All operations in the session will be terminated.
-    
-    Args:
-        session_id: The ID of the session to delete.
-        ctx: FastMCP request context.
-        
-    Returns:
-        dict: Information about the deletion operation.
-    """
-    await ctx.warning(f"Deleting session: {session_id}")
-    
-    try:
-        was_active = session_id == kernel_manager._session_manager.active_session_id
-        success = kernel_manager._session_manager.delete_session(session_id)
-        
-        if success:
-            await ctx.info(f"Successfully deleted session: {session_id}")
-            result = {
-                "session_id": session_id,
-                "status": "deleted",
-                "was_active": was_active,
-                "timestamp": time.time()
-            }
-            
-            if was_active:
-                result["new_active_session"] = kernel_manager._session_manager.active_session_id
-                await ctx.info(f"Switched to default session: {result['new_active_session']}")
-            
-            return result
-        else:
-            raise ToolError(f"Session '{session_id}' does not exist")
-            
-    except Exception as e:
-        await ctx.error(f"Failed to delete session: {str(e)}")
-        raise ToolError(f"Failed to delete session: {str(e)}")
-
 @mcp.custom_route("/files/upload", methods=["POST"])
 async def upload_file(request: Request):
     """Handles file uploads."""
@@ -1501,6 +1547,9 @@ def main():
     parser.add_argument("--transport", type=str, default="stdio", choices=["stdio", "http"], help="Transport mode (default: stdio)")
     parser.add_argument("--host", type=str, default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--python", type=str, default=os.environ.get("PYTHON", sys.executable), help="Path to python interpreter to use for the kernel and subprocesses")
+    parser.add_argument("--venv", type=str, default=None, help="Path to a virtual environment to activate for the kernel and subprocesses")
+    parser.add_argument("--pythonpath", type=str, default=None, help="Extra PYTHONPATH entries (colon/semicolon-separated)")
     args = parser.parse_args()
 
     # Recompute directories if overridden via CLI
@@ -1512,6 +1561,24 @@ def main():
         globals()["UPLOADS_DIR"] = (ws / "uploads").resolve()
         for d in (WORKSPACE_DIR, SCRIPTS_DIR, OUTPUTS_DIR, UPLOADS_DIR):
             d.mkdir(parents=True, exist_ok=True)
+
+    # Apply interpreter/venv/PYTHONPATH configuration
+    global SELECTED_PYTHON, VENV_PATH, EXTRA_PYTHONPATH
+    SELECTED_PYTHON = args.python or sys.executable
+    os.environ["PYTHON"] = SELECTED_PYTHON
+    VENV_PATH = args.venv
+    if args.pythonpath:
+        EXTRA_PYTHONPATH = [p for p in args.pythonpath.split(os.pathsep) if p]
+    # Ensure MPL is headless
+    os.environ.setdefault("MPLBACKEND", "Agg")
+    # Restart active session kernel to apply new environment, if already running
+    try:
+        session = kernel_manager._session_manager.get_session()
+        if session.is_active:
+            session.stop()
+            session.start()
+    except Exception:
+        pass
 
     if args.transport == "stdio":
         mcp.run(transport="stdio")
