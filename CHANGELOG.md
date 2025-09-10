@@ -19,4 +19,8 @@ Fixed/Improved
 - Integration tests covering notebook runs, dataset flows, and export.
 
 [0.6.x]: historical changes prior to the 1.0.0 release.
+## [1.0.1] - 2025-09-10
+
+Fixed
+- Increase dataset/state operation timeout to 60s to stabilize Python 3.10 CI during first-time DuckDB initialization.
 
