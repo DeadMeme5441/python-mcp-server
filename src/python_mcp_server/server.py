@@ -44,7 +44,7 @@ class TimeoutConfig:
         self.inspection = 5.0           # Object inspection timeout
         self.kernel_response = 10.0     # General kernel response timeout
         self.health_check = 3.0         # Kernel health check timeout
-        self.state_operations = 30.0    # State save/restore & dataset ops
+        self.state_operations = 60.0    # State save/restore & dataset ops (CI-safe)
         
         # Progressive timeout multipliers
         self.progressive_multipliers = [1.0, 1.5, 2.0, 3.0]
