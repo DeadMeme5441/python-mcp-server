@@ -126,7 +126,7 @@ graph TB
     J --> L[Security Layer]
 ```
 
-## 📦 Package Structure (v0.6.0)
+## 📦 Package Structure (v1.0.0)
 
 ```
 src/python_mcp_server/
